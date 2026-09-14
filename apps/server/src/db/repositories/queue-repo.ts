@@ -49,8 +49,22 @@ export function addToQueue(
   playerName: string,
   fingerprint?: string | null,
   cookieToken?: string | null,
+  socketId?: string | null,
 ): QueueEntry {
   const db = getDb();
+
+  const existing = db
+    .prepare('SELECT id, position FROM waiting_queue WHERE room_code = ? AND player_name = ?')
+    .get(roomCode, playerName) as { id: string; position: number } | undefined;
+
+  if (existing) {
+    db.prepare(
+      `UPDATE waiting_queue
+          SET fingerprint = ?, cookie_token = ?, socket_id = ?, is_connected = 1
+        WHERE id = ?`,
+    ).run(fingerprint ?? null, cookieToken ?? null, socketId ?? null, existing.id);
+    return getQueueEntry(existing.id)!;
+  }
 
   // Determine the next position.
   const row = db
@@ -59,11 +73,22 @@ export function addToQueue(
   const position = row.max_pos + 1;
 
   db.prepare(
-    `INSERT INTO waiting_queue (id, room_code, player_name, fingerprint, cookie_token, position, is_connected)
-     VALUES (?, ?, ?, ?, ?, ?, 0)`,
-  ).run(id, roomCode, playerName, fingerprint ?? null, cookieToken ?? null, position);
+    `INSERT INTO waiting_queue (id, room_code, player_name, fingerprint, cookie_token, socket_id, position, is_connected)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+  ).run(id, roomCode, playerName, fingerprint ?? null, cookieToken ?? null, socketId ?? null, position);
 
   return getQueueEntry(id)!;
+}
+
+/**
+ * Fetch a queue entry by room + player name (UNIQUE constraint key).
+ */
+export function getQueueEntryByName(roomCode: string, playerName: string): QueueEntry | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT * FROM waiting_queue WHERE room_code = ? AND player_name = ?')
+    .get(roomCode, playerName) as QueueRow | undefined;
+  return row ? mapRowToQueueEntry(row) : null;
 }
 
 /**

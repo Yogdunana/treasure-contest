@@ -55,6 +55,18 @@ export const config = {
    * In development defaults to `host123`; in production MUST be set.
    */
   hostPassword: process.env.HOST_PASSWORD ?? (process.env.NODE_ENV === 'production' ? '' : 'host123'),
+
+  /**
+   * Whether reconnect cookies should be marked Secure.
+   * Campus HTTP deploys (e.g. http://10.100.13.17:3000) must NOT set Secure,
+   * otherwise browsers silently drop the cookie. Enable only for HTTPS
+   * public URLs or when COOKIE_SECURE=true.
+   */
+  get cookieSecure(): boolean {
+    if (process.env.COOKIE_SECURE === 'true') return true;
+    if (process.env.COOKIE_SECURE === 'false') return false;
+    return this.publicUrl.startsWith('https://');
+  },
 } as const;
 
 export type Config = typeof config;

@@ -29,7 +29,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
 COPY apps/client/package.json ./apps/client/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --config.minimum-release-age=0
 
 # ============================================================================
 # Stage 2: Build
@@ -74,7 +74,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
 COPY apps/client/package.json ./apps/client/
 
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --config.minimum-release-age=0
 
 # Copy built artifacts from builder stage
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist

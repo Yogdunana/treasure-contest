@@ -15,7 +15,8 @@ import { create } from 'zustand';
 import { socket } from '../lib/socket-client';
 import { useGameStore } from './game-store';
 import { useUIStore } from './ui-store';
-import { saveAuthToLocal, getAuthFromLocal, generateFingerprint } from '../lib/auth-storage';
+import { saveAuthToLocal, getAuthFromLocal, generateFingerprint, getHostAuth } from '../lib/auth-storage';
+import { persistPlayerSession } from '../lib/session';
 import type {
   ClientRole,
   StateSnapshot,
@@ -67,6 +68,38 @@ function registerEventListeners(): void {
       error: null,
     });
     useUIStore.getState().setShowDisconnectedBanner(false);
+
+    // After a transport reconnect the socket is a new ID and is no longer
+    // in the Socket.io room. Re-join host/screen so broadcasts resume.
+    const { roomCode, role } = useSocketStore.getState();
+    if (!roomCode || roomCode === '__pending__') return;
+
+    if (role === 'host') {
+      const host = getHostAuth(roomCode);
+      if (host?.hostToken) {
+        socket.emit('room:join', {
+          roomCode,
+          playerName: host.hostName || 'host',
+          role: 'host',
+          hostToken: host.hostToken,
+        });
+      }
+    } else if (role === 'screen') {
+      socket.emit('room:join', {
+        roomCode,
+        playerName: 'screen',
+        role: 'screen',
+      });
+    } else if (role === 'player') {
+      const stored = getAuthFromLocal(roomCode);
+      if (stored) {
+        socket.emit('room:reconnect', {
+          roomCode,
+          playerId: stored.playerId,
+          authToken: stored.authToken,
+        });
+      }
+    }
   });
 
   socket.on('disconnect', () => {
@@ -116,6 +149,7 @@ function registerEventListeners(): void {
     const roomCode = useSocketStore.getState().roomCode;
     if (roomCode) {
       saveAuthToLocal(roomCode, payload.playerId, payload.authToken);
+      void persistPlayerSession(payload.playerId, roomCode, payload.authToken);
     }
     useGameStore.setState({
       playerId: payload.playerId,
@@ -167,6 +201,13 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
       roomCode,
       role,
     });
+
+    if (role === 'host') {
+      const host = getHostAuth(roomCode);
+      if (host?.hostToken) {
+        socket.auth = { hostToken: host.hostToken };
+      }
+    }
 
     // Register listeners before connecting so we don't miss the initial
     // state:sync event that the server sends immediately on connection.

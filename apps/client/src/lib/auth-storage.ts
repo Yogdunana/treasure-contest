@@ -14,6 +14,13 @@
 import { generateFingerprint } from './fingerprint';
 
 const STORAGE_PREFIX = 'tc_auth_';
+const HOST_STORAGE_PREFIX = 'tc_host_';
+
+export interface HostAuthData {
+  roomCode: string;
+  hostName: string;
+  hostToken: string;
+}
 
 /**
  * Shape of the persisted auth data.
@@ -107,6 +114,73 @@ export function clearAuthLocal(roomCode?: string): void {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && key.startsWith(STORAGE_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Ignore access errors
+  }
+}
+
+function hostStorageKey(roomCode: string): string {
+  return `${HOST_STORAGE_PREFIX}${roomCode}`;
+}
+
+/**
+ * Persist host credentials so a refresh of `/host/:code` can `room:join`
+ * with a valid hostToken instead of connecting as an anonymous socket.
+ */
+export function saveHostAuth(roomCode: string, hostName: string, hostToken: string): void {
+  try {
+    const data: HostAuthData = { roomCode, hostName, hostToken };
+    localStorage.setItem(hostStorageKey(roomCode), JSON.stringify(data));
+  } catch {
+    // Ignore quota / private-mode failures
+  }
+}
+
+export function getHostAuth(roomCode?: string): HostAuthData | null {
+  try {
+    if (roomCode) {
+      const raw = localStorage.getItem(hostStorageKey(roomCode));
+      if (raw) {
+        const data = JSON.parse(raw) as HostAuthData;
+        if (data.roomCode && data.hostToken) {
+          return data;
+        }
+      }
+    }
+
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(HOST_STORAGE_PREFIX)) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const data = JSON.parse(raw) as HostAuthData;
+          if (data.roomCode && data.hostToken) {
+            return data;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore parse / access errors
+  }
+
+  return null;
+}
+
+export function clearHostAuth(roomCode?: string): void {
+  try {
+    if (roomCode) {
+      localStorage.removeItem(hostStorageKey(roomCode));
+      return;
+    }
+    const keysToRemove: string[] = [];
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(HOST_STORAGE_PREFIX)) {
         keysToRemove.push(key);
       }
     }

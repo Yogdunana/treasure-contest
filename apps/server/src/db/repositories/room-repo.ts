@@ -87,7 +87,7 @@ export function createRoom(
   const db = getDb();
   db.prepare(
     `INSERT INTO rooms (code, host_name, host_token, target_players, phase, current_round, game_session, is_paused)
-     VALUES (?, ?, ?, ?, 'LOBBY', 0, 0, 0)`,
+     VALUES (?, ?, ?, ?, 'LOBBY', 0, 1, 0)`,
   ).run(code, hostName, hostToken, targetPlayers);
 
   return getRoom(code)!;

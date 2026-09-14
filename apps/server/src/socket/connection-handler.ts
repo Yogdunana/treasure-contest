@@ -1,12 +1,10 @@
 import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
   RoomJoinPayload,
   RoomReconnectPayload,
   RoomReconnectByCookiePayload,
   RoomReconnectByFingerprintPayload,
   RoomReconnectByNamePayload,
-  ErrorCodes,
+  RoomJoinAck,
 } from '@treasure-contest/shared';
 import type { RoomManager } from '../game/room-manager.js';
 import type { QueueManager } from '../game/queue-manager.js';
@@ -21,27 +19,12 @@ import { logger } from '../utils/logger.js';
 import {
   QUEUE_CONFIG,
 } from '@treasure-contest/shared';
-
-// ============================================================================
-// Acknowledgement response type for room:join
-// ============================================================================
-
-/**
- * Response sent back to the client via the Socket.io acknowledgement callback
- * after a `room:join` event. Contains the data the client needs to store
- * (auth token, seat number) or an error if the join failed.
- */
-interface RoomJoinAck {
-  success: boolean;
-  roomCode?: string;
-  playerId?: string;
-  authToken?: string;
-  seatNumber?: number;
-  hostToken?: string;
-  queued?: boolean;
-  queuePosition?: number;
-  error?: { code: string; message: string };
-}
+import {
+  decideLobbyJoin,
+  findPlayerByName,
+  normalizePlayerName,
+  normalizeRoomCode,
+} from '../game/lobby-join.js';
 
 // ============================================================================
 // Connection handler setup
@@ -167,7 +150,9 @@ function handleRoomJoin(
   queueManager: QueueManager,
   broadcaster: Broadcaster,
 ): void {
-  const { roomCode, playerName, role, fingerprint } = payload;
+  const roomCode = normalizeRoomCode(payload.roomCode);
+  const playerName = normalizePlayerName(payload.playerName ?? '');
+  const { role, fingerprint, hostToken } = payload;
 
   logger.info('room:join', {
     socketId: socket.id,
@@ -175,6 +160,7 @@ function handleRoomJoin(
     playerName,
     role,
     hasFingerprint: fingerprint !== undefined,
+    hasHostToken: Boolean(hostToken),
   });
 
   // Verify the room exists
@@ -196,10 +182,20 @@ function handleRoomJoin(
       if (ack) ack({ success: true, roomCode });
       break;
 
-    case 'host':
-      handleHostJoin(io, socket, room, playerName, broadcaster);
-      if (ack) ack({ success: true, roomCode, hostToken: socket.data.hostToken });
+    case 'host': {
+      const joined = handleHostJoin(io, socket, room, playerName, hostToken, broadcaster);
+      if (ack) {
+        if (joined) {
+          ack({ success: true, roomCode: room.code, hostToken: socket.data.hostToken });
+        } else {
+          ack({
+            success: false,
+            error: { code: 'NOT_HOST', message: 'Invalid host token' },
+          });
+        }
+      }
       break;
+    }
 
     default:
       broadcaster.sendError(socket, 'INVALID_ACTION', `Unknown role: ${role}`);
@@ -221,11 +217,40 @@ function handlePlayerJoin(
   queueManager: QueueManager,
   broadcaster: Broadcaster,
 ): void {
-  // Case 1: Room is in LOBBY — new player can join
+  // Case 1: Room is in LOBBY — new join, reclaim disconnected seat, or queue
   if (room.phase === 'LOBBY') {
-    // Check if there is space (below targetPlayers)
-    if (room.players.size < room.targetPlayers) {
-      // Create the player
+    const decision = decideLobbyJoin({
+      players: room.players.values(),
+      playerName,
+      targetPlayers: room.targetPlayers,
+      queueLength: room.queue.length,
+    });
+
+    if (decision.action === 'reconnect') {
+      attachReconnectedPlayer(
+        io,
+        socket,
+        room,
+        decision.playerId,
+        fingerprint,
+        ack,
+        roomManager,
+        queueManager,
+        broadcaster,
+        'lobby same-name reclaim',
+      );
+      return;
+    }
+
+    if (decision.action === 'name_taken') {
+      const errorCode = 'NAME_TAKEN';
+      const errorMsg = `Name "${playerName}" is already taken`;
+      broadcaster.sendError(socket, errorCode, errorMsg);
+      if (ack) ack({ success: false, error: { code: errorCode, message: errorMsg } });
+      return;
+    }
+
+    if (decision.action === 'join_new') {
       const result = roomManager.addPlayerToRoom(
         room.code,
         playerName,
@@ -234,21 +259,13 @@ function handlePlayerJoin(
       );
 
       if (!result) {
-        // Determine the reason: name taken or room full
-        const nameTaken = Array.from(room.players.values()).some(
-          (p) => p.name === playerName,
-        );
-        const errorCode = nameTaken ? 'NAME_TAKEN' : 'ROOM_FULL';
-        const errorMsg = nameTaken
-          ? `Name "${playerName}" is already taken`
-          : 'Room is full';
-
+        const errorCode = 'ROOM_FULL';
+        const errorMsg = 'Room is full';
         broadcaster.sendError(socket, errorCode, errorMsg);
         if (ack) ack({ success: false, error: { code: errorCode, message: errorMsg } });
         return;
       }
 
-      // Success: set socket data and join the Socket.io room
       socket.join(room.code);
       socket.data.roomCode = room.code;
       socket.data.role = 'player';
@@ -257,14 +274,12 @@ function handlePlayerJoin(
         socket.data.fingerprint = fingerprint;
       }
 
-      // Notify everyone in the room that a player joined
       io.to(room.code).emit('player:joined', {
         playerId: result.player.id,
         name: result.player.name,
         seatNumber: result.player.seatNumber,
       });
 
-      // Broadcast updated state (sends player their private state)
       broadcaster.broadcast(room);
 
       logger.info('Player joined room', {
@@ -274,7 +289,6 @@ function handlePlayerJoin(
         seat: result.player.seatNumber,
       });
 
-      // Return auth token and player info via acknowledgement
       if (ack) {
         ack({
           success: true,
@@ -287,8 +301,7 @@ function handlePlayerJoin(
       return;
     }
 
-    // Room is at target capacity — try to add to waiting queue
-    if (room.queue.length >= QUEUE_CONFIG.MAX_QUEUE_SIZE) {
+    if (decision.action === 'queue_full') {
       const errorCode = 'QUEUE_FULL';
       const errorMsg = 'Waiting queue is full';
       broadcaster.sendError(socket, errorCode, errorMsg);
@@ -296,7 +309,20 @@ function handlePlayerJoin(
       return;
     }
 
-    // Add to queue
+    // Room is at target capacity — add (or refresh) a waiting-queue entry
+    if (room.queue.length >= QUEUE_CONFIG.MAX_QUEUE_SIZE && decision.action === 'queue') {
+      const alreadyQueued = room.queue.some(
+        (e) => normalizePlayerName(e.playerName) === playerName,
+      );
+      if (!alreadyQueued) {
+        const errorCode = 'QUEUE_FULL';
+        const errorMsg = 'Waiting queue is full';
+        broadcaster.sendError(socket, errorCode, errorMsg);
+        if (ack) ack({ success: false, error: { code: errorCode, message: errorMsg } });
+        return;
+      }
+    }
+
     const entry = queueManager.addToQueue(
       room,
       playerName,
@@ -312,7 +338,6 @@ function handlePlayerJoin(
       return;
     }
 
-    // Set socket data for queued role
     socket.join(room.code);
     socket.data.roomCode = room.code;
     socket.data.role = 'queued';
@@ -321,7 +346,6 @@ function handlePlayerJoin(
       socket.data.fingerprint = fingerprint;
     }
 
-    // Send queue status to the player
     const estimatedWait = `${Math.ceil(entry.position * 5)} minutes`;
     socket.emit('queue:status', {
       position: entry.position,
@@ -329,10 +353,7 @@ function handlePlayerJoin(
       estimatedWait,
     });
 
-    // Notify host of queue update
     broadcaster.sendQueueUpdate(room, room.queue);
-
-    // Broadcast state (queued player gets QueuedSnapshot)
     broadcaster.broadcast(room);
 
     logger.info('Player added to queue', {
@@ -353,9 +374,7 @@ function handlePlayerJoin(
   }
 
   // Case 2: Room is NOT in LOBBY — check for reconnection by name
-  const existingPlayer = Array.from(room.players.values()).find(
-    (p) => p.name === playerName,
-  );
+  const existingPlayer = findPlayerByName(room.players.values(), playerName);
 
   if (existingPlayer) {
     // Reconnect the player
@@ -399,6 +418,8 @@ function handlePlayerJoin(
         success: true,
         roomCode: room.code,
         playerId: existingPlayer.id,
+        authToken: lookupPlayerAuthToken(existingPlayer.id),
+        seatNumber: existingPlayer.seatNumber,
       });
     }
     return;
@@ -455,22 +476,33 @@ function handleHostJoin(
   socket: AppSocket,
   room: Room,
   hostName: string,
+  payloadHostToken: string | undefined,
   broadcaster: Broadcaster,
-): void {
-  // Read the host token from the handshake auth
+): boolean {
+  // Token may arrive in the join payload (refresh / reconnect) or in
+  // handshake.auth (set before socket.connect). Either is sufficient.
   const handshakeAuth = socket.handshake.auth as { hostToken?: string } | undefined;
-  const hostToken = handshakeAuth?.hostToken;
+  const hostToken = payloadHostToken || handshakeAuth?.hostToken;
 
-  // Verify the host token
   if (!hostToken || hostToken !== room.hostToken) {
     broadcaster.sendError(socket, 'NOT_HOST', 'Invalid host token');
-    return;
+    logger.warn('Host join rejected: invalid token', {
+      room: room.code,
+      socketId: socket.id,
+      hasPayloadToken: Boolean(payloadHostToken),
+      hasHandshakeToken: Boolean(handshakeAuth?.hostToken),
+    });
+    return false;
   }
 
-  // Verify the host name matches
-  if (hostName !== room.hostName) {
-    broadcaster.sendError(socket, 'NOT_HOST', 'Host name does not match room');
-    return;
+  // Name is informational. A valid host token is sufficient to reclaim
+  // the console after refresh; a mismatched leftover name must not block it.
+  if (hostName && hostName !== room.hostName) {
+    logger.info('Host join name differs from room hostName; accepting token', {
+      room: room.code,
+      provided: hostName,
+      expected: room.hostName,
+    });
   }
 
   // Set the host socket ID on the room
@@ -495,8 +527,9 @@ function handleHostJoin(
   logger.info('Host joined room', {
     room: room.code,
     socketId: socket.id,
-    hostName,
+    hostName: hostName || room.hostName,
   });
+  return true;
 }
 
 // ============================================================================
@@ -616,7 +649,13 @@ function handleReconnectByToken(
   });
 
   if (ack) {
-    ack({ success: true, roomCode, playerId });
+    ack({
+      success: true,
+      roomCode,
+      playerId,
+      authToken: lookupPlayerAuthToken(playerId),
+      seatNumber: player.seatNumber,
+    });
   }
 }
 
@@ -712,7 +751,13 @@ function handleReconnectByCookie(
   });
 
   if (ack) {
-    ack({ success: true, roomCode, playerId: cookiePlayerId });
+    ack({
+      success: true,
+      roomCode,
+      playerId: cookiePlayerId,
+      authToken: lookupPlayerAuthToken(cookiePlayerId),
+      seatNumber: player.seatNumber,
+    });
   }
 }
 
@@ -816,7 +861,13 @@ function handleReconnectByFingerprint(
   });
 
   if (ack) {
-    ack({ success: true, roomCode, playerId: matchedPlayerId });
+    ack({
+      success: true,
+      roomCode,
+      playerId: matchedPlayerId,
+      authToken: lookupPlayerAuthToken(matchedPlayerId),
+      seatNumber: player.seatNumber,
+    });
   }
 }
 
@@ -915,7 +966,13 @@ function handleReconnectByName(
   });
 
   if (ack) {
-    ack({ success: true, roomCode, playerId: player.id });
+    ack({
+      success: true,
+      roomCode,
+      playerId: player.id,
+      authToken: lookupPlayerAuthToken(player.id),
+      seatNumber: player.seatNumber,
+    });
   }
 }
 
@@ -1232,6 +1289,81 @@ function tryPromoteFromQueue(
 /**
  * Reset all role/room data on a socket after leaving.
  */
+function lookupPlayerAuthToken(playerId: string): string | undefined {
+  try {
+    return playerRepo.getPlayer(playerId)?.authToken;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reconnect a seated player, drop a same-name queue leftover, and ack.
+ */
+function attachReconnectedPlayer(
+  io: AppServer,
+  socket: AppSocket,
+  room: Room,
+  playerId: string,
+  fingerprint: string | undefined,
+  ack: ((response: RoomJoinAck) => void) | undefined,
+  roomManager: RoomManager,
+  queueManager: QueueManager,
+  broadcaster: Broadcaster,
+  via: string,
+): void {
+  const player = room.players.get(playerId);
+  if (!player) {
+    const error = { code: 'PLAYER_NOT_FOUND' as const, message: 'Player not found in room' };
+    broadcaster.sendError(socket, error.code, error.message);
+    if (ack) ack({ success: false, error });
+    return;
+  }
+
+  const reconnected = roomManager.reconnectPlayer(room.code, playerId, socket.id);
+  if (!reconnected) {
+    const error = { code: 'PLAYER_NOT_FOUND' as const, message: 'Failed to reconnect player' };
+    broadcaster.sendError(socket, error.code, error.message);
+    if (ack) ack({ success: false, error });
+    return;
+  }
+
+  const leftoverQueue = room.queue.find(
+    (e) => normalizePlayerName(e.playerName) === normalizePlayerName(player.name),
+  );
+  if (leftoverQueue) {
+    queueManager.removeFromQueue(room, leftoverQueue.id);
+  }
+
+  socket.join(room.code);
+  socket.data.roomCode = room.code;
+  socket.data.role = 'player';
+  socket.data.playerId = playerId;
+  if (fingerprint) {
+    socket.data.fingerprint = fingerprint;
+  }
+
+  io.to(room.code).emit('player:reconnected', { playerId });
+  broadcaster.broadcast(room);
+
+  logger.info('Player reconnected via room:join', {
+    room: room.code,
+    playerId,
+    name: player.name,
+    via,
+  });
+
+  if (ack) {
+    ack({
+      success: true,
+      roomCode: room.code,
+      playerId,
+      authToken: lookupPlayerAuthToken(playerId),
+      seatNumber: player.seatNumber,
+    });
+  }
+}
+
 function clearSocketData(socket: AppSocket): void {
   socket.data.roomCode = undefined;
   socket.data.role = undefined;

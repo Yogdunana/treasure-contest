@@ -85,9 +85,15 @@ export default function HostCreatePage() {
       const { hostName: name, targetPlayers: players, hostPassword: pwd } =
         pendingCreateRef.current;
       pendingCreateRef.current = null;
-      createRoom(name, players, pwd);
+      createRoom(name, players, pwd, (ack) => {
+        if (ack.success && ack.roomCode) {
+          navigate(`/host/${ack.roomCode}`);
+        } else if (ack.error) {
+          setSubmitting(false);
+        }
+      });
     }
-  }, [isConnected, submitting, createRoom]);
+  }, [isConnected, submitting, createRoom, navigate]);
 
   // ── Listen for state:sync to get the room code and navigate ───────────
   useEffect(() => {
@@ -124,7 +130,13 @@ export default function HostCreatePage() {
       setSubmitting(true);
 
       if (isConnected) {
-        createRoom(name, targetPlayers, pwd);
+        createRoom(name, targetPlayers, pwd, (ack) => {
+          if (ack.success && ack.roomCode) {
+            navigate(`/host/${ack.roomCode}`);
+          } else if (ack.error) {
+            setSubmitting(false);
+          }
+        });
       } else {
         // Store pending request and connect the socket
         pendingCreateRef.current = {

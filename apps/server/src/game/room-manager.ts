@@ -19,6 +19,7 @@ import {
 } from '../utils/id-generator.js';
 import { generateAuthToken } from '../identity/auth-token.js';
 import { logger } from '../utils/logger.js';
+import { normalizePlayerName, normalizeRoomCode } from './lobby-join.js';
 
 // ============================================================================
 // BroadcastFn type
@@ -104,31 +105,32 @@ export class RoomManager {
    * Get a room by code.
    */
   getRoom(code: string): Room | undefined {
-    return this.rooms.get(code);
+    return this.rooms.get(normalizeRoomCode(code));
   }
 
   /**
    * Get the game engine for a room.
    */
   getEngine(code: string): GameEngine | undefined {
+    const roomCode = normalizeRoomCode(code);
     // Lazily create engine if broadcastFn is set but engine doesn't exist
-    if (!this.engines.has(code) && this.broadcastFn) {
-      const room = this.rooms.get(code);
-      const timerManager = this.timerManagers.get(code);
+    if (!this.engines.has(roomCode) && this.broadcastFn) {
+      const room = this.rooms.get(roomCode);
+      const timerManager = this.timerManagers.get(roomCode);
       if (room && timerManager) {
         const engine = new GameEngine(room, timerManager, this.broadcastFn);
-        this.engines.set(code, engine);
+        this.engines.set(roomCode, engine);
         return engine;
       }
     }
-    return this.engines.get(code);
+    return this.engines.get(roomCode);
   }
 
   /**
    * Get the timer manager for a room.
    */
   getTimerManager(code: string): TimerManager | undefined {
-    return this.timerManagers.get(code);
+    return this.timerManagers.get(normalizeRoomCode(code));
   }
 
   /**
@@ -200,13 +202,26 @@ export class RoomManager {
 
       room.phase = record.phase;
       room.currentRound = record.currentRound;
-      room.gameSession = record.gameSession;
+      // Historical rows were inserted with game_session=0 while in-memory
+      // rooms start at 1. Tokens issued before restart used 1 — keep that.
+      room.gameSession = record.gameSession || 1;
+      if (record.gameSession === 0) {
+        try {
+          roomRepo.updateRoom(record.code, { gameSession: room.gameSession });
+        } catch (err) {
+          logger.error('Failed to normalize game_session on restore', {
+            error: err instanceof Error ? err.message : err,
+            room: record.code,
+          });
+        }
+      }
       room.isPaused = record.isPaused;
       room.pausedPhase = record.pausedPhase;
       room.timerRemaining = record.timerRemaining ?? 0;
       room.timerDeadline = record.timerDeadline;
-      room.hostSocketId = record.hostId;
-      room.screenSocketId = record.screenId;
+      // Old socket IDs are invalid after a process restart.
+      room.hostSocketId = null;
+      room.screenSocketId = null;
 
       // Restore players
       let players: playerRepo.PlayerRecord[] = [];
@@ -214,27 +229,47 @@ export class RoomManager {
         players = playerRepo.getPlayersByRoom(record.code);
       } catch (err) {
         logger.error('Failed to load players for room', {
-          error: err,
+          error: err instanceof Error ? err.message : err,
           room: record.code,
         });
       }
 
       for (const pr of players) {
-        const player: Player = {
-          id: pr.id,
-          name: pr.name,
-          seatNumber: pr.seatNumber,
-          isConnected: false, // Will be set to true on reconnect
-          isReady: pr.isReady,
-          availableNumbers: pr.availableNumbers,
-          usedNumbers: pr.usedNumbers,
-          roundSubmission: pr.roundSubmission,
-          gems: pr.gems,
-          missions: pr.missions,
-          finalScore: pr.finalScore,
-          finalRank: pr.finalRank,
-        };
-        room.players.set(player.id, player);
+        try {
+          const player: Player = {
+            id: pr.id,
+            name: pr.name,
+            seatNumber: pr.seatNumber,
+            isConnected: false, // Will be set to true on reconnect
+            isReady: pr.isReady,
+            availableNumbers: pr.availableNumbers,
+            usedNumbers: pr.usedNumbers,
+            roundSubmission: pr.roundSubmission,
+            gems: pr.gems,
+            missions: pr.missions,
+            finalScore: pr.finalScore,
+            finalRank: pr.finalRank,
+          };
+          room.players.set(player.id, player);
+        } catch (err) {
+          logger.error('Failed to restore player into memory', {
+            error: err instanceof Error ? err.message : err,
+            room: record.code,
+            playerId: pr.id,
+          });
+        }
+      }
+
+      if (players.length > 0 && room.players.size === 0) {
+        logger.warn('Room restore loaded DB players but none entered memory', {
+          room: record.code,
+          dbPlayers: players.length,
+        });
+      } else if (players.length === 0) {
+        logger.warn('Room restored with no persisted players — seats will be empty until rejoin', {
+          room: record.code,
+          phase: room.phase,
+        });
       }
 
       // Restore current round gems if in an active game
@@ -323,15 +358,18 @@ export class RoomManager {
     socketId: string,
     fingerprint?: string,
   ): { player: Player; authToken: string } | null {
-    const room = this.rooms.get(code);
+    const room = this.rooms.get(normalizeRoomCode(code));
     if (!room) return null;
 
     if (room.players.size >= room.maxPlayers) return null;
     if (room.phase !== 'LOBBY') return null;
 
+    const trimmedName = normalizePlayerName(playerName);
+    if (!trimmedName) return null;
+
     // Check for duplicate name
     for (const p of room.players.values()) {
-      if (p.name === playerName) return null;
+      if (normalizePlayerName(p.name) === trimmedName) return null;
     }
 
     const playerId = generatePlayerId();
@@ -340,7 +378,7 @@ export class RoomManager {
 
     const player: Player = {
       id: playerId,
-      name: playerName,
+      name: trimmedName,
       seatNumber,
       isConnected: true,
       isReady: false,
@@ -359,15 +397,20 @@ export class RoomManager {
     try {
       playerRepo.createPlayer(
         playerId,
-        code,
-        playerName,
+        room.code,
+        trimmedName,
         seatNumber,
         authToken,
         fingerprint ?? null,
       );
       playerRepo.updatePlayerSocket(playerId, socketId);
     } catch (err) {
-      logger.error('Failed to persist player to DB', { error: err });
+      logger.error('Failed to persist player to DB', {
+        error: err instanceof Error ? err.message : err,
+        room: room.code,
+        playerId,
+        name: trimmedName,
+      });
     }
 
     return { player, authToken };
@@ -381,7 +424,7 @@ export class RoomManager {
     playerId: string,
     socketId: string,
   ): Player | null {
-    const room = this.rooms.get(code);
+    const room = this.rooms.get(normalizeRoomCode(code));
     if (!room) return null;
 
     const player = room.players.get(playerId);
@@ -403,7 +446,7 @@ export class RoomManager {
    * Mark a player as disconnected.
    */
   disconnectPlayer(code: string, playerId: string): void {
-    const room = this.rooms.get(code);
+    const room = this.rooms.get(normalizeRoomCode(code));
     if (!room) return;
 
     const player = room.players.get(playerId);

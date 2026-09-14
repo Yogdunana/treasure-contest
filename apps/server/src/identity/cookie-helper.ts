@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { config } from '../config.js';
 
 /**
  * HTTP-only cookie helpers for Layer-2 reconnect.
@@ -36,7 +37,9 @@ function cookieOptions(maxAgeMs: number) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    // Only mark Secure on HTTPS. HTTP campus deploys would otherwise
+    // never persist Layer-2 reconnect cookies.
+    secure: config.cookieSecure,
     path: '/',
     maxAge: maxAgeMs,
   };

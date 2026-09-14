@@ -203,7 +203,7 @@ sudo systemctl restart docker
 
 配置完成后重新执行 `docker build` 或 `docker compose up -d --build`。
 
-> 项目已内置 `.npmrc` 文件，使用 npmmirror（淘宝/阿里云）作为 npm 源，Dockerfile 中 apt 也切换到了阿里云镜像，无需额外配置。
+> 项目已内置 `.npmrc` 文件，使用 npmmirror（淘宝/阿里云）作为 npm 源，Dockerfile 中 apt 也切换到了阿里云镜像。`.npmrc` 与 Dockerfile 已设置 `minimum-release-age=0`，避免 pnpm 10 因 npmmirror 同步延迟对 `express` 等新版本报 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`。若仍失败，可在构建命令上再加 `--config.minimum-release-age=0`。
 
 ## 环境变量
 
@@ -217,6 +217,7 @@ sudo systemctl restart docker
 | `ADMIN_PASSWORD` | `admin123`(dev) | 管理后台密码，生产环境必须设置 |
 | `ADMIN_JWT_SECRET` | 同 `ADMIN_PASSWORD` | 签名管理 token 的密钥 |
 | `HOST_PASSWORD` | `host123`(dev) | 主持人创建房间密码，生产环境必须设置 |
+| `COOKIE_SECURE` | 随 `PUBLIC_URL` | 设为 `true`/`false` 强制开关重连 Cookie 的 Secure 标记。校园 HTTP 部署请保持 false（默认：仅 https:// 的 PUBLIC_URL 才启用） |
 
 ## 游戏规则详解
 

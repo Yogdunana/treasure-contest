@@ -23,9 +23,12 @@ import { useSocketStore } from '../../store/socket-store';
 import { useGameStore } from '../../store/game-store';
 import {
   getAuthFromLocal,
+  saveAuthToLocal,
   clearAuthLocal,
   generateFingerprint,
 } from '../../lib/auth-storage';
+import { persistPlayerSession } from '../../lib/session';
+import type { RoomJoinAck } from '@treasure-contest/shared';
 import { QueuePage } from '../../components/player/QueuePage';
 import {
   ErrorCodes,
@@ -134,12 +137,23 @@ export default function PlayerJoinPage() {
     setMode('reconnecting');
     modeRef.current = 'reconnecting';
 
+    const applyJoinAck = (ack: RoomJoinAck) => {
+      if (ack.success && ack.playerId && ack.authToken && roomCode) {
+        saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
+        void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+      }
+    };
+
     const emitReconnect = () => {
-      socket.emit('room:reconnect', {
-        roomCode,
-        playerId: auth.playerId,
-        authToken: auth.authToken,
-      });
+      socket.emit(
+        'room:reconnect',
+        {
+          roomCode,
+          playerId: auth.playerId,
+          authToken: auth.authToken,
+        },
+        applyJoinAck,
+      );
     };
 
     if (socket.connected) {
@@ -164,12 +178,32 @@ export default function PlayerJoinPage() {
     modeRef.current = 'connecting';
 
     const emitJoin = () => {
-      socket.emit('room:join', {
-        roomCode,
-        playerName: name,
-        role: 'player' as const,
-        fingerprint: generateFingerprint(),
-      });
+      socket.emit(
+        'room:join',
+        {
+          roomCode,
+          playerName: name,
+          role: 'player' as const,
+          fingerprint: generateFingerprint(),
+        },
+        (ack: RoomJoinAck) => {
+          if (ack.success && ack.queued) {
+            setMode('queue');
+            return;
+          }
+          if (ack.success && ack.playerId && ack.authToken && roomCode) {
+            saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
+            void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+            navigate(`/play/${roomCode}/game`);
+            return;
+          }
+          if (ack.error) {
+            setErrorCode(ack.error.code);
+            setErrorMessage(ack.error.message);
+            setMode('idle');
+          }
+        },
+      );
     };
 
     if (socket.connected) {
@@ -178,7 +212,7 @@ export default function PlayerJoinPage() {
       connect(roomCode, 'player');
       pendingEmitRef.current = emitJoin;
     }
-  }, [roomCode, playerName, connect]);
+  }, [roomCode, playerName, connect, navigate]);
 
   // ── Render ─────────────────────────────────────────────────────────────
 

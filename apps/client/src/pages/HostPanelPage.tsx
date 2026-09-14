@@ -23,6 +23,7 @@ import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
+import { getHostAuth } from '../lib/auth-storage';
 import { useGamePhase } from '../hooks/useGamePhase';
 import { fadeIn } from '../animations/variants';
 import {
@@ -85,7 +86,13 @@ export default function HostPanelPage() {
       return;
     }
 
-    // Need to connect
+    // Need to connect — hostToken must already be in localStorage
+    if (!getHostAuth(roomCode)) {
+      useSocketStore.setState({
+        error: '主持人凭证丢失，请重新创建房间或使用本机创建时的浏览器打开控制台',
+      });
+      return;
+    }
     if (!isConnecting) {
       connect(roomCode, 'host');
     }

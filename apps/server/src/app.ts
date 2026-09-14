@@ -21,6 +21,8 @@ import { setupActionHandlers } from './socket/action-handler.js';
 import { setupHostHandlers } from './socket/host-handler.js';
 import { setupQueueHandlers } from './socket/queue-handler.js';
 import { createAdminRouter } from './routes/admin.js';
+import { createSessionRouter } from './routes/session.js';
+import { mountStaticAndSpa } from './http/spa.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,13 +73,6 @@ export function createApp(httpServer?: HttpServer, restoreFromDB = false): {
   // JSON body parser for API routes.
   app.use(express.json({ limit: '1mb' }));
 
-  // Static files (production only): serve the built client SPA.
-  if (config.isProduction) {
-    const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
-    app.use(express.static(clientDist));
-    logger.info('Serving static client files', { path: clientDist });
-  }
-
   // --- 2. Health check ---------------------------------------------------
   app.get('/health', (_req, res) => {
     res.json({
@@ -101,6 +96,7 @@ export function createApp(httpServer?: HttpServer, restoreFromDB = false): {
   // Mounted before the catch-all / static file serving so these routes
   // take precedence over SPA fallback.
   app.use('/api/admin', createAdminRouter());
+  app.use('/api/session', createSessionRouter());
 
   // --- 4. Game managers --------------------------------------------------
   // Create the RoomManager and optionally restore active rooms from the DB.
@@ -159,6 +155,14 @@ export function createApp(httpServer?: HttpServer, restoreFromDB = false): {
     // Queue handlers: queue:join, queue:leave
     setupQueueHandlers(io, socket, roomManager, queueManager, broadcaster);
   });
+
+  // --- 9. SPA fallback (production) --------------------------------------
+  // Must be registered after /health, /api, and Socket.io so deep links
+  // like /play/:code serve index.html instead of Express "Cannot GET".
+  if (config.isProduction) {
+    const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
+    mountStaticAndSpa(app, clientDist);
+  }
 
   return { app, io, roomManager, queueManager, broadcaster };
 }
