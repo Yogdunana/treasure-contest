@@ -1,0 +1,19 @@
+{
+  "name": "treasure-contest",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "dev:server": "pnpm --filter server dev",
+    "dev:client": "pnpm --filter client dev",
+    "build:shared": "pnpm --filter shared build",
+    "build:server": "pnpm --filter server build",
+    "build:client": "pnpm --filter client build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
