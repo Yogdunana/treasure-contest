@@ -16,6 +16,8 @@ import type { QueueManager } from '../game/queue-manager.js';
 import type { Room } from '../game/room.js';
 import type { Broadcaster } from './broadcaster.js';
 import type { AppServer, AppSocket } from './middleware.js';
+import crypto from 'node:crypto';
+import { config } from '../config.js';
 import * as roomRepo from '../db/repositories/room-repo.js';
 import { logger } from '../utils/logger.js';
 
@@ -207,6 +209,27 @@ function handleCreateRoom(
   // Validate host name
   if (!hostName || typeof hostName !== 'string' || hostName.trim().length === 0) {
     const error = { code: ErrorCodes.INVALID_ACTION, message: 'Host name is required' };
+    broadcaster.sendError(socket, error.code, error.message);
+    if (ack) ack({ success: false, error });
+    return;
+  }
+
+  // Verify host password (prevents unauthorized room creation).
+  const { hostPassword } = payload;
+  const expected = config.hostPassword;
+  if (!expected) {
+    const error = { code: ErrorCodes.INVALID_ACTION, message: 'Server host password not configured' };
+    broadcaster.sendError(socket, error.code, error.message);
+    if (ack) ack({ success: false, error });
+    return;
+  }
+  const provided = Buffer.from(String(hostPassword ?? ''));
+  const expectedBuf = Buffer.from(expected);
+  const passwordValid =
+    provided.length === expectedBuf.length &&
+    crypto.timingSafeEqual(provided, expectedBuf);
+  if (!passwordValid) {
+    const error = { code: ErrorCodes.INVALID_ACTION, message: '主持人密码错误' };
     broadcaster.sendError(socket, error.code, error.message);
     if (ack) ack({ success: false, error });
     return;

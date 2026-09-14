@@ -97,10 +97,12 @@ export interface SelectGemPayload {
   gemId: string;
 }
 
-/** `host:create_room` - Create a new room with a target player count */
+/** `host:create_room` - Create a room with a target player count */
 export interface CreateRoomPayload {
   hostName: string;
   targetPlayers: number;
+  /** Password to authorise host actions (compared against HOST_PASSWORD env). */
+  hostPassword: string;
 }
 
 /** `host:skip_player` - Skip the current picker (host override) */

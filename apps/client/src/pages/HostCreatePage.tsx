@@ -36,6 +36,7 @@ import {
 interface PendingCreate {
   hostName: string;
   targetPlayers: number;
+  hostPassword: string;
 }
 
 /** Brief game instructions shown on the create page. */
@@ -74,16 +75,17 @@ export default function HostCreatePage() {
 
   const [hostName, setHostName] = useState('');
   const [targetPlayers, setTargetPlayers] = useState(DEFAULT_TARGET_PLAYERS);
+  const [hostPassword, setHostPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const pendingCreateRef = useRef<PendingCreate | null>(null);
 
   // ── Emit createRoom once socket is connected ──────────────────────────
   useEffect(() => {
     if (isConnected && pendingCreateRef.current && submitting) {
-      const { hostName: name, targetPlayers: players } =
+      const { hostName: name, targetPlayers: players, hostPassword: pwd } =
         pendingCreateRef.current;
       pendingCreateRef.current = null;
-      createRoom(name, players);
+      createRoom(name, players, pwd);
     }
   }, [isConnected, submitting, createRoom]);
 
@@ -115,23 +117,25 @@ export default function HostCreatePage() {
     (e: React.FormEvent) => {
       e.preventDefault();
       const name = hostName.trim();
-      if (!name || submitting) return;
+      const pwd = hostPassword.trim();
+      if (!name || !pwd || submitting) return;
 
       clearError();
       setSubmitting(true);
 
       if (isConnected) {
-        createRoom(name, targetPlayers);
+        createRoom(name, targetPlayers, pwd);
       } else {
         // Store pending request and connect the socket
         pendingCreateRef.current = {
           hostName: name,
           targetPlayers,
+          hostPassword: pwd,
         };
         connect('__pending__', 'host');
       }
     },
-    [hostName, targetPlayers, submitting, isConnected, createRoom, connect, clearError],
+    [hostName, hostPassword, targetPlayers, submitting, isConnected, createRoom, connect, clearError],
   );
 
   const isLoading = submitting || isConnecting;
@@ -223,6 +227,29 @@ export default function HostCreatePage() {
                 </p>
               </div>
 
+              {/* Host password */}
+              <div className="mb-4">
+                <label
+                  htmlFor="hostPassword"
+                  className="mb-1.5 block text-xs font-medium text-slate-400"
+                >
+                  主持人密码
+                </label>
+                <input
+                  id="hostPassword"
+                  type="password"
+                  value={hostPassword}
+                  onChange={(e) => setHostPassword(e.target.value)}
+                  placeholder="请输入主持人密码"
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-600 focus:border-violet-500 focus:outline-none disabled:opacity-50"
+                />
+                <p className="mt-1 text-[10px] text-slate-600">
+                  密码由服务器配置，防止他人随意创建房间
+                </p>
+              </div>
+
               {/* Error message */}
               {error && (
                 <motion.div
@@ -237,13 +264,13 @@ export default function HostCreatePage() {
               {/* Submit button */}
               <button
                 type="submit"
-                disabled={!hostName.trim() || isLoading}
+                disabled={!hostName.trim() || !hostPassword.trim() || isLoading}
                 className={clsx(
                   'flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition-all',
                   isLoading
                     ? 'cursor-wait bg-slate-700 text-slate-400'
                     : 'bg-violet-600 text-white hover:bg-violet-500',
-                  !hostName.trim() && !isLoading && 'opacity-50',
+                  (!hostName.trim() || !hostPassword.trim()) && !isLoading && 'opacity-50',
                 )}
               >
                 {isLoading ? (

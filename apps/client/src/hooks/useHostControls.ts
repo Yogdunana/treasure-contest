@@ -21,7 +21,7 @@ import { useSocketStore } from '../store/socket-store';
 
 export interface UseHostControlsReturn {
   /** Create a new room. Returns the emitted status. */
-  createRoom: (hostName: string, targetPlayers: number) => boolean;
+  createRoom: (hostName: string, targetPlayers: number, hostPassword: string) => boolean;
   /** Start the game in the current room. */
   startGame: () => boolean;
   /** Pause the game. */
@@ -46,9 +46,9 @@ export function useHostControls(): UseHostControlsReturn {
   const isConnected = useSocketStore((s) => s.isConnected);
 
   const createRoom = useCallback(
-    (hostName: string, targetPlayers: number): boolean => {
+    (hostName: string, targetPlayers: number, hostPassword: string): boolean => {
       if (!isConnected) return false;
-      socket.emit('host:create_room', { hostName, targetPlayers });
+      socket.emit('host:create_room', { hostName, targetPlayers, hostPassword });
       return true;
     },
     [isConnected],

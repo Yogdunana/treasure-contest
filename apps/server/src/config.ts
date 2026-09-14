@@ -47,6 +47,14 @@ export const config = {
    * Defaults to the admin password itself if not explicitly provided.
    */
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? process.env.ADMIN_PASSWORD ?? 'dev-admin-secret',
+
+  /**
+   * Password required to create a room as a host.
+   * Prevents random people on the network from creating rooms and
+   * accessing the host control panel.
+   * In development defaults to `host123`; in production MUST be set.
+   */
+  hostPassword: process.env.HOST_PASSWORD ?? (process.env.NODE_ENV === 'production' ? '' : 'host123'),
 } as const;
 
 export type Config = typeof config;

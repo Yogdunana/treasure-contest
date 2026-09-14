@@ -144,6 +144,7 @@ docker run -d \
 | `NODE_ENV` | `development` | 运行环境 |
 | `ADMIN_PASSWORD` | `admin123`(dev) | 管理后台密码，生产环境必须设置 |
 | `ADMIN_JWT_SECRET` | 同 `ADMIN_PASSWORD` | 签名管理 token 的密钥 |
+| `HOST_PASSWORD` | `host123`(dev) | 主持人创建房间密码，生产环境必须设置 |
 
 ## 游戏规则详解
 
