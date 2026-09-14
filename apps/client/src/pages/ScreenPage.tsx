@@ -3,18 +3,29 @@
  *
  * Route: /screen/:roomCode
  *
- * Always emits `room:join` with role='screen' after the socket is up,
- * including when the socket was already connected as another role
- * (homepage → 大屏, or a leftover host handshake). Waits for a
- * ScreenSnapshot before rendering so a bare connection is not treated
- * as "joined with 0 players".
+ * On every mount / refresh this page MUST emit `room:join` with
+ * role='screen' and apply the join-ack snapshot. A bare socket
+ * connection is not "joined" — that was the CNEZFP bug (「已加入0人」
+ * with zero `Screen joined room` logs).
+ *
+ * Does not call disconnect() on unmount, so a projector refresh in
+ * this tab cannot wipe host/player sockets in other tabs.
  */
 
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { socket } from '../lib/socket-client';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
 import { ScreenDisplay } from '../components/screen';
+
+function isScreenSnapshotForRoom(roomCode: string): boolean {
+  const store = useGameStore.getState();
+  return (
+    store.snapshotRole === 'screen' &&
+    store.snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
+  );
+}
 
 export default function ScreenPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -22,8 +33,7 @@ export default function ScreenPage() {
   const isConnected = useSocketStore((s) => s.isConnected);
   const isConnecting = useSocketStore((s) => s.isConnecting);
   const error = useSocketStore((s) => s.error);
-  const connect = useSocketStore((s) => s.connect);
-  const ensureJoined = useSocketStore((s) => s.ensureJoined);
+  const joinAsScreen = useSocketStore((s) => s.joinAsScreen);
   const clearError = useSocketStore((s) => s.clearError);
 
   const snapshotRole = useGameStore((s) => s.snapshotRole);
@@ -36,30 +46,35 @@ export default function ScreenPage() {
 
   const retryRef = useRef<number | null>(null);
 
-  // ── Open the socket as screen (works even if already connected) ────────
+  // ── Mount / refresh / transport reconnect: always join as screen ──
   useEffect(() => {
     if (!roomCode) return;
     clearError();
-    connect(roomCode, 'screen');
+    joinAsScreen(roomCode);
+
+    const onConnect = () => {
+      useSocketStore.getState().joinAsScreen(roomCode);
+    };
+    socket.on('connect', onConnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode]);
 
-  // ── Join / re-join until we actually receive a ScreenSnapshot ──────────
+  // ── Keep joining until a ScreenSnapshot for this room arrives ────
   useEffect(() => {
-    if (!roomCode || !isConnected || joined) return;
+    if (!roomCode || joined) return;
 
-    ensureJoined(roomCode, 'screen');
+    if (isConnected) {
+      joinAsScreen(roomCode);
+    }
 
     retryRef.current = window.setInterval(() => {
-      const store = useGameStore.getState();
-      if (
-        store.snapshotRole === 'screen' &&
-        store.snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
-      ) {
-        return;
-      }
-      useSocketStore.getState().ensureJoined(roomCode, 'screen');
-    }, 2500);
+      if (isScreenSnapshotForRoom(roomCode)) return;
+      useSocketStore.getState().joinAsScreen(roomCode);
+    }, 1500);
 
     return () => {
       if (retryRef.current !== null) {
@@ -67,9 +82,9 @@ export default function ScreenPage() {
         retryRef.current = null;
       }
     };
-  }, [roomCode, isConnected, joined, ensureJoined]);
+  }, [roomCode, isConnected, joined, joinAsScreen]);
 
-  // ── Loading until the server accepts us as screen ──────────────────────
+  // ── Loading until the server accepts us as screen ────────────────
   if (!joined && !error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 text-slate-400">
@@ -112,7 +127,7 @@ export default function ScreenPage() {
         <button
           onClick={() => {
             clearError();
-            if (roomCode) connect(roomCode, 'screen');
+            if (roomCode) joinAsScreen(roomCode);
           }}
           className="rounded-lg bg-violet-600 px-6 py-3 text-base font-bold text-white transition-colors hover:bg-violet-500"
         >

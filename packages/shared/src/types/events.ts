@@ -67,6 +67,12 @@ export interface RoomJoinAck {
   hostToken?: string;
   queued?: boolean;
   queuePosition?: number;
+  /**
+   * Full role-filtered snapshot at join time.
+   * Screen refresh applies this immediately so a missed `state:sync`
+   * cannot leave the projector on an empty lobby.
+   */
+  snapshot?: StateSnapshot;
   error?: { code: string; message: string };
 }
 

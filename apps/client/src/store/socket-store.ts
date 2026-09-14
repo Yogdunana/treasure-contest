@@ -47,6 +47,12 @@ export interface SocketStore {
   connect: (roomCode: string, role: ClientRole) => void;
   /** Emit the role-specific join/reconnect for an already-open socket. */
   ensureJoined: (roomCode?: string, role?: ClientRole) => void;
+  /**
+   * Screen projector path: register listeners, open the socket if needed,
+   * and emit `room:join` with role=screen. Applies the ack snapshot so a
+   * missed `state:sync` cannot leave the display empty.
+   */
+  joinAsScreen: (roomCode: string) => void;
   disconnect: () => void;
   clearError: () => void;
 }
@@ -62,6 +68,14 @@ export interface SocketStore {
  *
  * Called once during `connect()`; the listeners are removed in `disconnect()`.
  */
+let listenersBound = false;
+
+function ensureEventListeners(): void {
+  if (listenersBound) return;
+  listenersBound = true;
+  registerEventListeners();
+}
+
 function registerEventListeners(): void {
   // ── Connection lifecycle ──────────────────────────────────────────────
   socket.on('connect', () => {
@@ -158,6 +172,38 @@ function registerEventListeners(): void {
  */
 function removeEventListeners(): void {
   socket.removeAllListeners();
+  listenersBound = false;
+}
+
+function applyScreenJoinAck(ack: RoomJoinAck): void {
+  if (!ack) return;
+  if (ack.success) {
+    useSocketStore.setState({ error: null });
+    if (ack.snapshot?.role === 'screen') {
+      useGameStore.getState().setSnapshot(ack.snapshot);
+    }
+    return;
+  }
+  if (ack.error?.code === 'ROOM_NOT_FOUND') {
+    return;
+  }
+  useSocketStore.setState({ error: ack.error?.message ?? '加入房间失败' });
+}
+
+function emitScreenJoin(roomCode: string): void {
+  if (!socket.connected) return;
+  const code = roomCode.trim();
+  if (!code || code === '__pending__') return;
+
+  socket.emit(
+    'room:join',
+    {
+      roomCode: code,
+      playerName: 'screen',
+      role: 'screen',
+    },
+    applyScreenJoinAck,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -196,26 +242,7 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
         });
       }
     } else if (nextRole === 'screen') {
-      socket.emit(
-        'room:join',
-        {
-          roomCode: code,
-          playerName: 'screen',
-          role: 'screen',
-        },
-        (ack: RoomJoinAck) => {
-          if (!ack) return;
-          if (ack.success) {
-            set({ error: null });
-            return;
-          }
-          // Room may appear a moment later; ScreenPage keeps retrying.
-          if (ack.error?.code === 'ROOM_NOT_FOUND') {
-            return;
-          }
-          set({ error: ack.error?.message ?? '加入房间失败' });
-        },
-      );
+      emitScreenJoin(code);
     } else if (nextRole === 'player') {
       const stored = getAuthFromLocal(code);
       if (stored) {
@@ -228,12 +255,39 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
     }
   },
 
+  joinAsScreen: (roomCode) => {
+    const code = roomCode.trim();
+    if (!code || code === '__pending__') return;
+
+    set({
+      error: null,
+      roomCode: code,
+      role: 'screen',
+    });
+    ensureEventListeners();
+
+    if (socket.connected) {
+      set({ isConnected: true, isConnecting: false });
+      emitScreenJoin(code);
+      return;
+    }
+
+    if (!get().isConnecting) {
+      set({ isConnecting: true });
+      socket.connect();
+    }
+  },
+
   connect: (roomCode, role) => {
     set({
       error: null,
       roomCode,
       role,
     });
+    // Always bind listeners first. The already-connected path used to
+    // skip this, so a projector refresh could emit join and still miss
+    // `state:sync` (empty lobby / 「已加入0人」).
+    ensureEventListeners();
 
     if (role === 'host') {
       const host = getHostAuth(roomCode);
@@ -257,10 +311,6 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
     }
 
     set({ isConnecting: true });
-
-    // Register listeners before connecting so we don't miss the initial
-    // state:sync event that the server sends immediately on connection.
-    registerEventListeners();
     socket.connect();
 
     const stored = getAuthFromLocal(roomCode);

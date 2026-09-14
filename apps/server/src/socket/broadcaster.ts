@@ -51,11 +51,12 @@ export class Broadcaster {
    * `broadcast()` relies on async `fetchSockets()` after `socket.join()`,
    * which can miss the joining socket. A direct emit does not.
    */
-  sendSnapshot(socket: AppSocket, room: Room): void {
+  sendSnapshot(socket: AppSocket, room: Room): StateSnapshot | null {
     const snapshot = this.buildSnapshot(room, socket.data);
     if (snapshot) {
       socket.emit('state:sync', snapshot);
     }
+    return snapshot;
   }
 
   /**

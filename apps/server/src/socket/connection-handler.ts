@@ -178,8 +178,7 @@ function handleRoomJoin(
       break;
 
     case 'screen':
-      handleScreenJoin(io, socket, room, broadcaster);
-      if (ack) ack({ success: true, roomCode });
+      handleScreenJoin(io, socket, room, broadcaster, ack);
       break;
 
     case 'host': {
@@ -451,9 +450,11 @@ function handleScreenJoin(
   socket: AppSocket,
   room: Room,
   broadcaster: Broadcaster,
+  ack: ((response: RoomJoinAck) => void) | undefined,
 ): void {
   // A later screen tab replaces the previous one. Do not require a
-  // particular phase — GAME_OVER / post-restart LOBBY must still attach.
+  // particular phase — GAME_OVER / post-restart LOBBY / mid-game refresh
+  // must still attach and receive the current public state.
   room.screenSocketId = socket.id;
 
   // Update DB
@@ -463,14 +464,14 @@ function handleScreenJoin(
     logger.error('Failed to update screen socket ID in DB', { error: err });
   }
 
-  // Set socket data
+  // Set socket data BEFORE building the snapshot so role === 'screen'.
   socket.join(room.code);
   socket.data.roomCode = room.code;
   socket.data.role = 'screen';
 
-  // Direct snapshot first: refresh / mid-game join must not wait on
+  // Direct snapshot + ack payload: refresh must not depend on
   // async fetchSockets() after socket.join(), which can miss this socket.
-  broadcaster.sendSnapshot(socket, room);
+  const snapshot = broadcaster.sendSnapshot(socket, room);
   broadcaster.broadcast(room);
 
   logger.info('Screen joined room', {
@@ -481,6 +482,14 @@ function handleScreenJoin(
     connectedPlayers: room.getConnectedPlayers().length,
     session: room.gameSession,
   });
+
+  if (ack) {
+    ack({
+      success: true,
+      roomCode: room.code,
+      ...(snapshot ? { snapshot } : {}),
+    });
+  }
 }
 
 /**

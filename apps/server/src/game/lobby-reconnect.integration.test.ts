@@ -319,6 +319,9 @@ describe('screen lifecycle and post-game restart', () => {
       screen.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
     });
     expect(joined.success).toBe(true);
+    expect(joined.snapshot?.role).toBe('screen');
+    expect(joined.snapshot?.publicGameState.playerSeats.some((p) => p.name === 'Alice')).toBe(true);
+    expect(joined.snapshot?.publicGameState.phase).toBe('LOBBY');
 
     const first = await firstPromise;
     expect(first.role).toBe('screen');
@@ -341,6 +344,9 @@ describe('screen lifecycle and post-game restart', () => {
       screen.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
     });
     expect(rejoined.success).toBe(true);
+    expect(rejoined.snapshot?.role).toBe('screen');
+    expect(rejoined.snapshot?.publicGameState.phase).toBe('LOBBY');
+    expect(rejoined.snapshot?.publicGameState.playerSeats.some((p) => p.name === 'Alice')).toBe(true);
 
     host.disconnect();
     player.disconnect();
@@ -460,6 +466,11 @@ describe('screen lifecycle and post-game restart', () => {
       screen.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
     });
     expect(joined.success).toBe(true);
+    expect(joined.snapshot?.role).toBe('screen');
+    expect(joined.snapshot?.phase).not.toBe('LOBBY');
+    expect(joined.snapshot?.publicGameState.playerSeats).toHaveLength(4);
+    expect(joined.snapshot?.publicGameState.currentRound).toBeGreaterThanOrEqual(1);
+    expect(joined.snapshot?.publicGameState.gems.length).toBeGreaterThan(0);
 
     const live = await firstSync;
     expect(live.role).toBe('screen');
@@ -475,6 +486,10 @@ describe('screen lifecycle and post-game restart', () => {
       refreshed.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
     });
     expect(rejoined.success).toBe(true);
+    expect(rejoined.snapshot?.role).toBe('screen');
+    expect(rejoined.snapshot?.phase).not.toBe('LOBBY');
+    expect(rejoined.snapshot?.publicGameState.playerSeats).toHaveLength(4);
+    expect(rejoined.snapshot?.publicGameState.gems.length).toBeGreaterThan(0);
     const again = await refreshSync;
     expect(again.role).toBe('screen');
     expect(again.phase).not.toBe('LOBBY');
