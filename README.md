@@ -72,17 +72,50 @@ treasure-contest/
 
 ### 安装
 
+#### 方式 A：直接从 GitHub 克隆（服务器可联网时）
+
 ```bash
-# 克隆仓库
-git clone https://github.com/your-username/treasure-contest.git
+git clone https://github.com/Yogdunana/treasure-contest.git
 cd treasure-contest
 
-# 安装依赖
+# 安装依赖（已配置国内 npmmirror 镜像）
 pnpm install
 
 # 复制环境变量配置
 cp .env.example .env
 ```
+
+#### 方式 B：离线传输（服务器无法访问 GitHub 时）
+
+如果服务器在内网、无法访问 GitHub，在**能联网的电脑**上操作：
+
+```bash
+# 1. 在能联网的电脑上克隆并打包
+git clone https://github.com/Yogdunana/treasure-contest.git
+cd treasure-contest
+
+# 2. 打成 tar 包（排除 node_modules 和 .git）
+tar czf treasure-contest.tar.gz --exclude='node_modules' --exclude='.git' treasure-contest/
+
+# 3. 用 scp / U盘 / 内网传输把 tar 包传到服务器
+scp treasure-contest.tar.gz user@服务器IP:~/
+
+# 4. 在服务器上解压
+ssh user@服务器IP
+tar xzf treasure-contest.tar.gz
+cd treasure-contest
+
+# 5. 安装依赖（服务器需能访问 npmmirror.com）
+pnpm install
+
+# 6. 构建并运行
+pnpm build
+cp .env.example .env
+# 编辑 .env 修改密码和 PUBLIC_URL
+node apps/server/dist/index.js
+```
+
+> 如果服务器连 npmmirror.com 都无法访问，可以在联网电脑上执行 `pnpm install` 后，把整个项目目录（含 `node_modules`）一起打包传到服务器。
 
 ### 本地开发
 
@@ -121,6 +154,8 @@ node apps/server/dist/index.js
 
 ## Docker 部署
 
+### 方式一：docker run
+
 ```bash
 # 构建镜像
 docker build -t treasure-contest .
@@ -130,8 +165,45 @@ docker run -d \
   --name treasure-contest \
   -p 3000:3000 \
   -v treasure-data:/data \
+  -e ADMIN_PASSWORD=你的管理密码 \
+  -e HOST_PASSWORD=你的主持人密码 \
+  -e PUBLIC_URL=http://服务器IP:3000 \
   treasure-contest
 ```
+
+### 方式二：docker-compose（推荐）
+
+编辑 `docker-compose.yml`，修改 `PUBLIC_URL`、`ADMIN_PASSWORD`、`HOST_PASSWORD`，然后：
+
+```bash
+docker compose up -d --build
+```
+
+### 国内服务器部署（Docker 镜像加速）
+
+如果服务器在国内，Docker 拉取 `node:20-slim` 基础镜像可能很慢或失败。配置 Docker 镜像加速：
+
+```bash
+# 编辑 Docker 配置
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.m.daocloud.io",
+    "https://docker.xuanyuan.me"
+  ]
+}
+EOF
+
+# 重启 Docker
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+配置完成后重新执行 `docker build` 或 `docker compose up -d --build`。
+
+> 项目已内置 `.npmrc` 文件，使用 npmmirror（淘宝/阿里云）作为 npm 源，Dockerfile 中 apt 也切换到了阿里云镜像，无需额外配置。
 
 ## 环境变量
 

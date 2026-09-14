@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  treasure-contest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: treasure-contest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - treasure-data:/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=/data/treasure.db
+      - PUBLIC_URL=http:// REPLACE_WITH_YOUR_SERVER_IP:3000
+      - ADMIN_PASSWORD=CHANGE_ME_ADMIN
+      - HOST_PASSWORD=CHANGE_ME_HOST
+      # CORS_ORIGIN can be * when client and server share the same port
+      - CORS_ORIGIN=*
+
+volumes:
+  treasure-data:

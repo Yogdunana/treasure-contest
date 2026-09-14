@@ -1,15 +1,27 @@
 # ============================================================================
 # Stage 1: Install dependencies
 # ============================================================================
-FROM node:20-slim AS deps
+# Use build arg to allow switching base image mirror (for users behind GFW)
+# Default: official Docker Hub. Set --build-arg BASE_IMAGE=... to override.
+ARG BASE_IMAGE=node:20-slim
+FROM ${BASE_IMAGE} AS deps
 WORKDIR /app
+
+# Use Aliyun apt mirror for faster package downloads in China
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    || true
 
 # Install build tools for native modules (e.g. better-sqlite3)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm
+# Install pnpm via npmmirror (avoids npm registry timeout)
+RUN npm install -g pnpm --registry=https://registry.npmmirror.com
+
+# Copy .npmrc for China mirror configuration
+COPY .npmrc ./
 
 # Copy workspace config and all package.json files for dependency resolution
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -36,15 +48,25 @@ RUN pnpm --filter server build
 # ============================================================================
 # Stage 3: Production
 # ============================================================================
-FROM node:20-slim AS runner
+ARG BASE_IMAGE=node:20-slim
+FROM ${BASE_IMAGE} AS runner
 WORKDIR /app
+
+# Use Aliyun apt mirror
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    || true
 
 # Install build tools for native modules (production deps need better-sqlite3)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm
+# Install pnpm via npmmirror
+RUN npm install -g pnpm --registry=https://registry.npmmirror.com
+
+# Copy .npmrc for China mirror configuration
+COPY .npmrc ./
 
 # Copy workspace config and package.json files for production install
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
