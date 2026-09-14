@@ -65,37 +65,32 @@ describe('lobby disconnect then same-name rejoin', () => {
     expect(reconnected?.seatNumber).toBe(bob.seatNumber);
     expect(room.queue).toHaveLength(0);
 
+    // After Bob reclaims, four players are connected — a new name waits.
     const eve = decideLobbyJoin({
       players: room.players.values(),
       playerName: 'Eve',
       targetPlayers: room.targetPlayers,
       queueLength: room.queue.length,
     });
-    expect(eve.action).toBe('join_new');
-    if (eve.action === 'join_new' && eve.evictPlayerId) {
-      rooms.removePlayerFromRoom(roomCode, eve.evictPlayerId);
-    }
-    const seatedEve = rooms.addPlayerToRoom(roomCode, 'Eve', 'sock-eve');
-    expect(seatedEve).not.toBeNull();
-    expect(room.queue).toHaveLength(0);
-    expect(room.players.size).toBe(4);
-    expect([...room.players.values()].some((p) => p.name === 'Eve')).toBe(true);
-    expect(room.players.has(bob.id)).toBe(false);
-
-    const fullConnected = decideLobbyJoin({
-      players: [
-        { id: 'a', name: 'Alice', isConnected: true },
-        { id: 'c', name: 'Cara', isConnected: true },
-        { id: 'd', name: 'Dan', isConnected: true },
-        { id: 'e', name: 'Eve', isConnected: true },
-      ],
-      playerName: 'Frank',
-      targetPlayers: 4,
-      queueLength: 0,
-    });
-    expect(fullConnected.action).toBe('queue');
-    queues.addToQueue(room, 'Frank', 'sock-frank');
+    expect(eve.action).toBe('queue');
+    queues.addToQueue(room, 'Eve', 'sock-eve');
     expect(room.queue).toHaveLength(1);
+    expect(room.players.size).toBe(4);
+
+    // While Bob is still disconnected, a new name takes that seat instead.
+    rooms.disconnectPlayer(roomCode, bob.id);
+    const frank = decideLobbyJoin({
+      players: room.players.values(),
+      playerName: 'Frank',
+      targetPlayers: room.targetPlayers,
+      queueLength: room.queue.length,
+    });
+    expect(frank).toEqual({ action: 'join_new', evictPlayerId: bob.id });
+    rooms.removePlayerFromRoom(roomCode, bob.id);
+    const seatedFrank = rooms.addPlayerToRoom(roomCode, 'Frank', 'sock-frank');
+    expect(seatedFrank).not.toBeNull();
+    expect(room.players.has(bob.id)).toBe(false);
+    expect([...room.players.values()].some((p) => p.name === 'Frank')).toBe(true);
   });
 
   it('dropDisconnectedPlayers frees offline seats for the next lobby', () => {
