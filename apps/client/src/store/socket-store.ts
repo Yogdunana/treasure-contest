@@ -55,6 +55,8 @@ export interface SocketStore {
 // Event handler registration
 // ---------------------------------------------------------------------------
 
+let listenersRegistered = false;
+
 /**
  * Registers all server-to-client event listeners on the socket.
  * These listeners update the game store and UI store in response to
@@ -63,6 +65,9 @@ export interface SocketStore {
  * Called once during `connect()`; the listeners are removed in `disconnect()`.
  */
 function registerEventListeners(): void {
+  if (listenersRegistered) return;
+  listenersRegistered = true;
+
   // ── Connection lifecycle ──────────────────────────────────────────────
   socket.on('connect', () => {
     useSocketStore.setState({
@@ -93,6 +98,21 @@ function registerEventListeners(): void {
   // ── State sync (the main event — full state snapshot) ─────────────────
   socket.on('state:sync', (snapshot: StateSnapshot) => {
     useGameStore.getState().setSnapshot(snapshot);
+    if (
+      snapshot.role === 'player' &&
+      snapshot.privateState.authToken
+    ) {
+      saveAuthToLocal(
+        snapshot.roomCode,
+        snapshot.privateState.playerId,
+        snapshot.privateState.authToken,
+      );
+      void persistPlayerSession(
+        snapshot.privateState.playerId,
+        snapshot.roomCode,
+        snapshot.privateState.authToken,
+      );
+    }
   });
 
   // ── Timer ticks ───────────────────────────────────────────────────────
@@ -153,6 +173,7 @@ function registerEventListeners(): void {
  */
 function removeEventListeners(): void {
   socket.removeAllListeners();
+  listenersRegistered = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +236,11 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
   },
 
   connect: (roomCode, role) => {
+    const prev = get();
+    if (prev.roomCode !== roomCode || prev.role !== role) {
+      useGameStore.getState().reset();
+    }
+
     set({
       error: null,
       roomCode,
@@ -232,6 +258,9 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
     // React remount). Do not no-op — emit the role join immediately.
     if (socket.connected) {
       set({ isConnected: true, isConnecting: false });
+      if (!listenersRegistered) {
+        registerEventListeners();
+      }
       get().ensureJoined(roomCode, role);
       return;
     }

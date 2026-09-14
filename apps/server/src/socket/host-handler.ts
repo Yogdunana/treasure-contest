@@ -494,12 +494,12 @@ function handlePromotePlayer(
     queueEntryId,
   });
 
-  // Only allow promotion during LOBBY or GAME_OVER
-  if (room.phase !== 'LOBBY' && room.phase !== 'GAME_OVER') {
+  // Only allow promotion during LOBBY (GAME_OVER seats are locked until restart)
+  if (room.phase !== 'LOBBY') {
     broadcaster.sendError(
       socket,
       'INVALID_ACTION',
-      'Can only promote players during LOBBY or GAME_OVER phase',
+      'Can only promote players during LOBBY phase',
     );
     return;
   }
@@ -527,7 +527,7 @@ function handlePromotePlayer(
 
   if (!result) {
     broadcaster.sendError(socket, 'INVALID_ACTION', 'Failed to create player from queue entry');
-    // Re-add to queue?
+    queueManager.requeueAtFront(room, entry);
     return;
   }
 

@@ -392,6 +392,7 @@ export class RoomManager {
     };
 
     room.players.set(playerId, player);
+    room.playerAuthTokens.set(playerId, authToken);
 
     // Persist to DB
     try {
@@ -414,6 +415,30 @@ export class RoomManager {
     }
 
     return { player, authToken };
+  }
+
+  /**
+   * Permanently remove a player from the room and SQLite (lobby leave).
+   */
+  removePlayer(code: string, playerId: string): boolean {
+    const room = this.rooms.get(normalizeRoomCode(code));
+    if (!room) return false;
+
+    const existed = room.players.delete(playerId);
+    room.playerAuthTokens.delete(playerId);
+    if (!existed) return false;
+
+    try {
+      playerRepo.deletePlayer(playerId);
+    } catch (err) {
+      logger.error('Failed to delete player from DB', {
+        error: err instanceof Error ? err.message : err,
+        room: room.code,
+        playerId,
+      });
+    }
+
+    return true;
   }
 
   /**
@@ -455,6 +480,7 @@ export class RoomManager {
     for (const player of [...room.players.values()]) {
       if (player.isConnected) continue;
       room.players.delete(player.id);
+      room.playerAuthTokens.delete(player.id);
       removed += 1;
       try {
         playerRepo.deletePlayer(player.id);

@@ -86,6 +86,15 @@ export function updateGemPick(id: string, pickedBy: string, pickOrder: number): 
 }
 
 /**
+ * Delete every gem row for a room (used on game restart).
+ */
+export function deleteGemsByRoom(roomCode: string): number {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM gems WHERE room_code = ?').run(roomCode);
+  return result.changes;
+}
+
+/**
  * Return all gems ever generated for a room (across all rounds).
  */
 export function getGemsByRoom(roomCode: string): Gem[] {

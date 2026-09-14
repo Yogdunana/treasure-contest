@@ -179,6 +179,30 @@ export class QueueManager {
   }
 
   /**
+   * Put a previously promoted entry back at the front of the queue.
+   * Used when seating fails after the entry was already removed.
+   */
+  requeueAtFront(room: Room, entry: QueueEntry): void {
+    room.queue.unshift(entry);
+    this.reindexQueue(room);
+
+    try {
+      queueRepo.addToQueue(
+        entry.id,
+        room.code,
+        entry.playerName,
+        entry.browserFingerprint ?? null,
+        entry.cookieToken ?? null,
+        entry.socketId ?? null,
+      );
+    } catch (err) {
+      logger.error('Failed to requeue entry in DB', {
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+  }
+
+  /**
    * Promote a specific player from the queue (host override).
    *
    * @returns The promoted QueueEntry, or null if not found.

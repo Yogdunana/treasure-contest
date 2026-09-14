@@ -258,12 +258,29 @@ export class TimerManager {
   }
 
   /**
+   * Snapshot of the timer that was running when pauseAll() was called.
+   * The game engine consumes this to restart the correct callback.
+   */
+  peekPausedTimer(): TimerManager['pausedTimerType'] {
+    return this.pausedTimerType;
+  }
+
+  /**
+   * Clear the saved pause snapshot after the engine has resumed.
+   */
+  clearPausedTimer(): void {
+    this.pausedTimerType = null;
+  }
+
+  /**
    * Resume timers after a pause.
    *
-   * Restarts the appropriate timer based on the saved pausedTimerType.
-   * The game engine provides callbacks for tick and expiry.
+   * Restarts number-selection / gem-pick timers from the saved snapshot.
+   * Delay timers are restarted by the game engine (it has the callbacks).
    *
    * @param room      The room with saved timer state.
+   * @param phase     The phase we are resuming into (do NOT read room.pausedPhase
+   *                  — the engine may already have restored room.phase).
    * @param onTick    Callback for per-second ticks.
    * @param onExpire  Callback for timer expiry.
    */
@@ -271,17 +288,22 @@ export class TimerManager {
     room: Room,
     onTick: (remaining: number, playerId?: string) => void,
     onExpire: (playerId?: string) => void,
+    phase?: GamePhase,
   ): void {
     if (!this.pausedTimerType) return;
 
-    const remaining = this.pausedTimerType.remaining;
+    const snapshot = this.pausedTimerType;
+    const remaining = snapshot.remaining;
     this.pausedTimerType = null;
 
+    const resumePhase: GamePhase = phase ?? room.phase;
+
     if (remaining <= 0) {
-      // Timer had already expired; fire expiry immediately
-      const phase: GamePhase = room.pausedPhase ?? room.phase;
-      if (phase === 'GEM_SELECTION') {
-        const playerId = room.getCurrentPickerId();
+      if (resumePhase === 'GEM_SELECTION' || snapshot.kind === 'gem_pick') {
+        const playerId =
+          snapshot.kind === 'gem_pick'
+            ? snapshot.playerId
+            : room.getCurrentPickerId();
         onExpire(playerId ?? undefined);
       } else {
         onExpire();
@@ -289,35 +311,30 @@ export class TimerManager {
       return;
     }
 
-    switch (room.pausedPhase) {
-      case 'NUMBER_SELECTION':
-        this.startNumberSelection(
+    if (snapshot.kind === 'number_selection' || resumePhase === 'NUMBER_SELECTION') {
+      this.startNumberSelection(
+        room,
+        (r) => onTick(r),
+        () => onExpire(),
+        remaining,
+      );
+      return;
+    }
+
+    if (snapshot.kind === 'gem_pick' || resumePhase === 'GEM_SELECTION') {
+      const playerId =
+        snapshot.kind === 'gem_pick'
+          ? snapshot.playerId
+          : room.getCurrentPickerId();
+      if (playerId) {
+        this.startGemPickTimer(
           room,
-          (r) => onTick(r),
-          () => onExpire(),
+          playerId,
+          (r, pid) => onTick(r, pid),
+          (pid) => onExpire(pid),
           remaining,
         );
-        break;
-
-      case 'GEM_SELECTION': {
-        const playerId = room.getCurrentPickerId();
-        if (playerId) {
-          this.startGemPickTimer(
-            room,
-            playerId,
-            (r, pid) => onTick(r, pid),
-            (pid) => onExpire(pid),
-            remaining,
-          );
-        }
-        break;
       }
-
-      default:
-        // For delay timers, just restart with remaining time
-        // The game engine handles this case by calling the appropriate
-        // flow method directly
-        break;
     }
   }
 

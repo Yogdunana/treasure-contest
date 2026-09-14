@@ -95,10 +95,25 @@ export default function PlayerJoinPage() {
         clearAuthLocal(roomCode);
         setSessionExpired(true);
         setMode('idle');
+      } else if (
+        payload.code === ErrorCodes.PLAYER_NOT_FOUND ||
+        payload.code === ErrorCodes.ROOM_NOT_FOUND
+      ) {
+        if (modeRef.current === 'reconnecting') {
+          // Layer 1/2/3 failures are handled by the reconnect ack chain.
+          return;
+        }
+        clearAuthLocal(roomCode);
+        setMode('idle');
       } else if (payload.code === ErrorCodes.ROOM_FULL) {
         // Room is full — join the queue automatically
         const name = nameRef.current.trim();
         if (name) {
+          useGameStore.setState({
+            playerId: null,
+            snapshotRole: 'queued',
+            snapshotRoomCode: roomCode,
+          });
           socket.emit('queue:join', {
             roomCode,
             playerName: name,
@@ -126,34 +141,61 @@ export default function PlayerJoinPage() {
   useEffect(() => {
     if (!roomCode) return;
 
-    const auth = getAuthFromLocal(roomCode);
-    if (!auth) {
-      // No stored auth — show join form
-      setMode('idle');
-      return;
-    }
-
-    // Attempt Layer-1 reconnect
-    setMode('reconnecting');
-    modeRef.current = 'reconnecting';
-
-    const applyJoinAck = (ack: RoomJoinAck) => {
+    const applyJoinAck = (ack: RoomJoinAck): boolean => {
       if (ack.success && ack.playerId && ack.authToken && roomCode) {
         saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
         void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+        return true;
       }
+      return false;
     };
 
-    const emitReconnect = () => {
+    const tryFingerprint = () => {
       socket.emit(
-        'room:reconnect',
-        {
-          roomCode,
-          playerId: auth.playerId,
-          authToken: auth.authToken,
+        'room:reconnect_by_fingerprint',
+        { roomCode, fingerprint: generateFingerprint() },
+        (ack: RoomJoinAck) => {
+          if (applyJoinAck(ack)) return;
+          setMode('idle');
         },
-        applyJoinAck,
       );
+    };
+
+    const tryCookieThenFingerprint = () => {
+      socket.emit('room:reconnect_by_cookie', { roomCode }, (ack: RoomJoinAck) => {
+        if (applyJoinAck(ack)) return;
+        tryFingerprint();
+      });
+    };
+
+    const auth = getAuthFromLocal(roomCode);
+    setMode('reconnecting');
+    modeRef.current = 'reconnecting';
+
+    const emitReconnect = () => {
+      if (auth) {
+        socket.emit(
+          'room:reconnect',
+          {
+            roomCode,
+            playerId: auth.playerId,
+            authToken: auth.authToken,
+          },
+          (ack: RoomJoinAck) => {
+            if (applyJoinAck(ack)) return;
+            if (ack.error?.code === 'SESSION_EXPIRED') {
+              clearAuthLocal(roomCode);
+              setSessionExpired(true);
+              setMode('idle');
+              return;
+            }
+            clearAuthLocal(roomCode);
+            tryCookieThenFingerprint();
+          },
+        );
+      } else {
+        tryCookieThenFingerprint();
+      }
     };
 
     if (socket.connected) {
@@ -162,6 +204,14 @@ export default function PlayerJoinPage() {
       connect(roomCode, 'player');
       pendingEmitRef.current = emitReconnect;
     }
+
+    const timeout = window.setTimeout(() => {
+      if (modeRef.current === 'reconnecting') {
+        setMode('idle');
+      }
+    }, 8000);
+
+    return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -188,6 +238,11 @@ export default function PlayerJoinPage() {
         },
         (ack: RoomJoinAck) => {
           if (ack.success && ack.queued) {
+            useGameStore.setState({
+              playerId: null,
+              snapshotRole: 'queued',
+              snapshotRoomCode: roomCode,
+            });
             setMode('queue');
             return;
           }

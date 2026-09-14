@@ -282,6 +282,14 @@ export function getPlayersByRoom(roomCode: string): PlayerRecord[] {
 }
 
 /**
+ * Replace a player's reconnect token (used after host:restart bumps gameSession).
+ */
+export function updateAuthToken(id: string, authToken: string): void {
+  const db = getDb();
+  db.prepare('UPDATE players SET auth_token = ? WHERE id = ?').run(authToken, id);
+}
+
+/**
  * Delete a single player row (used when restarting and dropping a disconnected seat).
  */
 export function deletePlayer(id: string): void {

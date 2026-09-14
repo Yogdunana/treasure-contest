@@ -810,17 +810,30 @@ function handleReconnectByFingerprint(
     logger.error('Failed to query players from DB for fingerprint reconnect', { error: err });
   }
 
-  // Try to find a matching player by fingerprint
+  // Prefer an exact fingerprint on a disconnected seat, then a fuzzy match
+  // on disconnected seats only — never steal a currently connected player.
   let matchedPlayerId: string | null = null;
+  let fuzzyMatchId: string | null = null;
 
   for (const dbPlayer of dbPlayers) {
-    if (compareFingerprints(dbPlayer.browserFingerprint, fingerprint)) {
-      // Verify the player exists in the in-memory room
-      if (room.players.has(dbPlayer.id)) {
-        matchedPlayerId = dbPlayer.id;
-        break;
-      }
+    const seated = room.players.get(dbPlayer.id);
+    if (!seated || seated.isConnected) continue;
+    if (!dbPlayer.browserFingerprint) continue;
+
+    if (dbPlayer.browserFingerprint === fingerprint) {
+      matchedPlayerId = dbPlayer.id;
+      break;
     }
+    if (
+      !fuzzyMatchId &&
+      compareFingerprints(dbPlayer.browserFingerprint, fingerprint)
+    ) {
+      fuzzyMatchId = dbPlayer.id;
+    }
+  }
+
+  if (!matchedPlayerId) {
+    matchedPlayerId = fuzzyMatchId;
   }
 
   if (!matchedPlayerId) {
@@ -1026,15 +1039,14 @@ function handleRoomLeave(
 
   // Handle based on role
   if (role === 'player' && playerId) {
-    // Remove the player from the room
-    room.players.delete(playerId);
-
-    // Mark as disconnected in DB
-    try {
-      playerRepo.updatePlayerConnection(playerId, false);
-      playerRepo.updatePlayerSocket(playerId, null);
-    } catch (err) {
-      logger.error('Failed to update player on leave', { error: err });
+    const inLobbyOrOver = room.phase === 'LOBBY' || room.phase === 'GAME_OVER';
+    if (inLobbyOrOver) {
+      // Permanent leave: free the seat so someone else can join.
+      roomManager.removePlayer(roomCode, playerId);
+    } else {
+      // Mid-game leave is treated as a disconnect so the seat and
+      // private state (numbers, gems, missions) survive for reconnect.
+      roomManager.disconnectPlayer(roomCode, playerId);
     }
 
     // Notify the room
@@ -1043,9 +1055,11 @@ function handleRoomLeave(
     // Broadcast updated state
     broadcaster.broadcast(room);
 
-    // If in LOBBY, try to promote a queue player
     if (room.phase === 'LOBBY') {
       tryPromoteFromQueue(io, room, roomManager, queueManager, broadcaster);
+    } else if (room.phase === 'NUMBER_SELECTION') {
+      const engine = roomManager.getEngine(roomCode);
+      engine?.checkAllSubmittedAndProceed();
     }
   } else if (role === 'screen') {
     // Clear the screen socket ID
@@ -1141,6 +1155,11 @@ function handleDisconnect(
       playerId,
     });
 
+    if (room.phase === 'NUMBER_SELECTION') {
+      const engine = roomManager.getEngine(roomCode);
+      engine?.checkAllSubmittedAndProceed();
+    }
+
     // If in LOBBY phase, may trigger queue promotion.
     // The disconnected player still occupies their seat, so we only
     // auto-promote if there is space below targetPlayers.
@@ -1213,8 +1232,8 @@ function tryPromoteFromQueue(
   if (room.players.size >= room.targetPlayers) return;
   if (room.queue.length === 0) return;
 
-  // Promote the next queue entry
-  const entry = queueManager.promoteNext(room);
+  // Peek first so a failed seat does not drop the waiting player.
+  const entry = room.queue[0];
   if (!entry) return;
 
   // The queue entry may have a stale socket ID if the player disconnected
@@ -1223,6 +1242,8 @@ function tryPromoteFromQueue(
       room: room.code,
       queueEntryId: entry.id,
     });
+    queueManager.removeFromQueue(room, entry.id);
+    tryPromoteFromQueue(io, room, roomManager, queueManager, broadcaster);
     return;
   }
 
@@ -1235,14 +1256,14 @@ function tryPromoteFromQueue(
   );
 
   if (!result) {
-    // Could not add (name taken or room full) — re-add to front of queue?
-    // For simplicity, log and let the host handle it.
     logger.warn('Failed to promote queue player to full player', {
       room: room.code,
       playerName: entry.playerName,
     });
     return;
   }
+
+  queueManager.removeFromQueue(room, entry.id);
 
   // Update the promoted player's socket data
   const promotedSocket = io.sockets.sockets.get(entry.socketId);

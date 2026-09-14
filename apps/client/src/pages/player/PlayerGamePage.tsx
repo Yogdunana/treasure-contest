@@ -18,7 +18,6 @@ import clsx from 'clsx';
 import { socket } from '../../lib/socket-client';
 import { useSocketStore } from '../../store/socket-store';
 import { useGameStore } from '../../store/game-store';
-import { useGamePhase } from '../../hooks/useGamePhase';
 import {
   getAuthFromLocal,
   clearAuthLocal,
@@ -48,29 +47,23 @@ export default function PlayerGamePage() {
   const isConnected = useSocketStore((s) => s.isConnected);
   const isConnecting = useSocketStore((s) => s.isConnecting);
   const socketRoomCode = useSocketStore((s) => s.roomCode);
-  const role = useSocketStore((s) => s.role);
   const connect = useSocketStore((s) => s.connect);
+  const ensureJoined = useSocketStore((s) => s.ensureJoined);
 
-  const playerId = useGameStore((s) => s.playerId);
   const phase = useGameStore((s) => s.phase);
-  const { currentRound } = useGamePhase();
+  const snapshotRole = useGameStore((s) => s.snapshotRole);
+  const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
+
+  const joined =
+    snapshotRole === 'player' &&
+    Boolean(roomCode) &&
+    snapshotRoomCode?.toUpperCase() === roomCode?.toUpperCase();
 
   const [activeTab, setActiveTab] = useState<BottomTab>('score');
   const [showReconnectForm, setShowReconnectForm] = useState(false);
   const [autoReconnectFailed, setAutoReconnectFailed] = useState(false);
 
-  // Refs for socket listeners
-  const pendingEmitRef = useRef<(() => void) | null>(null);
-  const reconnectAttemptedRef = useRef(false);
-
-  // ── Emit pending action when connection is established ──────────────────
-  useEffect(() => {
-    if (isConnected && pendingEmitRef.current) {
-      const emit = pendingEmitRef.current;
-      pendingEmitRef.current = null;
-      emit();
-    }
-  }, [isConnected]);
+  const retryRef = useRef<number | null>(null);
 
   // ── Register error listener for SESSION_EXPIRED ────────────────────────
   useEffect(() => {
@@ -79,8 +72,14 @@ export default function PlayerGamePage() {
     const errorHandler = (payload: ErrorPayload) => {
       if (payload.code === ErrorCodes.SESSION_EXPIRED) {
         clearAuthLocal(roomCode);
-        // Redirect back to join page
         navigate(`/play/${roomCode}`);
+      } else if (
+        payload.code === ErrorCodes.PLAYER_NOT_FOUND ||
+        payload.code === ErrorCodes.ROOM_NOT_FOUND
+      ) {
+        clearAuthLocal(roomCode);
+        setAutoReconnectFailed(true);
+        setShowReconnectForm(true);
       }
     };
 
@@ -90,46 +89,45 @@ export default function PlayerGamePage() {
     };
   }, [roomCode, navigate]);
 
-  // ── On mount: ensure socket connection ──────────────────────────────────
+  // ── On mount: always join as player (including role-switch from screen/host)
   useEffect(() => {
     if (!roomCode) return;
-    if (reconnectAttemptedRef.current) return;
-    reconnectAttemptedRef.current = true;
-
-    // If already connected as player, we're good
-    if (isConnected && role === 'player') return;
-
-    // If already connected but not as player, disconnect first
-    // (edge case: user was on screen/host page and navigated here)
-
-    // Try auto-reconnect via stored auth
     const auth = getAuthFromLocal(roomCode);
-    if (auth) {
-      const emitReconnect = () => {
-        socket.emit('room:reconnect', {
-          roomCode,
-          playerId: auth.playerId,
-          authToken: auth.authToken,
-        });
-      };
-
-      if (socket.connected) {
-        emitReconnect();
-      } else {
-        connect(roomCode, 'player');
-        pendingEmitRef.current = emitReconnect;
-      }
-    } else {
-      // No stored auth — redirect to join page
+    if (!auth) {
       navigate(`/play/${roomCode}`);
+      return;
     }
+    connect(roomCode, 'player');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode || !isConnected || joined) return;
+    ensureJoined(roomCode, 'player');
+
+    retryRef.current = window.setInterval(() => {
+      const store = useGameStore.getState();
+      if (
+        store.snapshotRole === 'player' &&
+        store.snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
+      ) {
+        return;
+      }
+      useSocketStore.getState().ensureJoined(roomCode, 'player');
+    }, 2500);
+
+    return () => {
+      if (retryRef.current !== null) {
+        window.clearInterval(retryRef.current);
+        retryRef.current = null;
+      }
+    };
+  }, [roomCode, isConnected, joined, ensureJoined]);
 
   // ── Show reconnect form if auto-reconnect seems to have failed ──────────
   useEffect(() => {
-    if (!isConnected && !isConnecting && reconnectAttemptedRef.current) {
-      // Give some time for auto-reconnect to work before showing the form
+    if (joined) return;
+    if (!isConnected && !isConnecting) {
       const timer = setTimeout(() => {
         if (!useSocketStore.getState().isConnected) {
           setAutoReconnectFailed(true);
@@ -138,7 +136,17 @@ export default function PlayerGamePage() {
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [isConnected, isConnecting]);
+    if (isConnected && !joined) {
+      const timer = setTimeout(() => {
+        const store = useGameStore.getState();
+        if (store.snapshotRole !== 'player') {
+          setAutoReconnectFailed(true);
+          setShowReconnectForm(true);
+        }
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [isConnected, isConnecting, joined]);
 
   // ── Handle successful reconnect from ReconnectForm ─────────────────────
   const handleReconnectSuccess = useCallback(() => {
@@ -149,7 +157,7 @@ export default function PlayerGamePage() {
   // ── Render ─────────────────────────────────────────────────────────────
 
   // Show reconnect form if auto-reconnect failed
-  if (showReconnectForm && roomCode && !isConnected) {
+  if (showReconnectForm && roomCode && !joined) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 p-6">
         <ReconnectForm
@@ -166,8 +174,8 @@ export default function PlayerGamePage() {
     );
   }
 
-  // Loading state while connecting
-  if (!isConnected && !autoReconnectFailed) {
+  // Loading until the server accepts us as this room's player
+  if (!joined && !autoReconnectFailed) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950">
         <svg

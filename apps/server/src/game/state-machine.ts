@@ -430,17 +430,18 @@ export function calculateFinalScores(room: Room): void {
 
   const players = Array.from(room.players.values());
 
-  // Iterative approach for H09 (which depends on final rank)
+  // Iterative approach for H09 (which depends on final rank).
+  // Pass 1 scores with finalRank = null (H09 always false).
+  // Pass 2+ re-check with preliminary ranks so H09 can complete.
   let stable = false;
   let iterations = 0;
   const maxIterations = 3;
 
   while (!stable && iterations < maxIterations) {
-    stable = true;
     iterations++;
 
     const finalRanksMap = new Map<string, number>();
-    if (iterations > 1 && room.finalResults.length > 0) {
+    if (room.finalResults.length > 0) {
       for (const result of room.finalResults) {
         finalRanksMap.set(result.playerId, result.finalRank);
       }
@@ -476,8 +477,10 @@ export function calculateFinalScores(room: Room): void {
     // Resolve ties and assign ranks
     const ranked = resolveTies(results);
 
-    // Check if H09 status changed (which depends on finalRank)
-    if (iterations > 1) {
+    // Always run at least two passes so H09 sees preliminary ranks.
+    // On later passes, stop when no H09 completion status flipped.
+    stable = iterations >= 2;
+    if (iterations >= 2) {
       for (const result of ranked) {
         const player = room.players.get(result.playerId);
         if (!player) continue;

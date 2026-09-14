@@ -104,6 +104,9 @@ export class Room {
   // -- Game session (for cross-game isolation) --
   gameSession: number = 1;
 
+  /** Latest auth tokens keyed by playerId (sent in private snapshots after restart). */
+  playerAuthTokens: Map<string, string> = new Map();
+
   // -- Pause state --
   isPaused: boolean = false;
   pausedPhase: GamePhase | null = null;
@@ -222,10 +225,15 @@ export class Room {
       this.phase === 'RESULTS_REVEAL' ||
       this.phase === 'GAME_OVER';
 
-    // Determine final results visibility
+    // Determine final results visibility.
+    // Reveal ceremony is worst → best (lowest score first). Rank-sorted
+    // `finalResults` is best-first, so slice a score-ascending copy instead.
     let finalResults: FinalResult[] | null = null;
     if (this.phase === 'RESULTS_REVEAL') {
-      finalResults = this.finalResults.slice(0, this.revealedResultsCount);
+      const revealOrder = [...this.finalResults].sort(
+        (a, b) => a.finalScore - b.finalScore,
+      );
+      finalResults = revealOrder.slice(0, this.revealedResultsCount);
     } else if (this.phase === 'GAME_OVER') {
       finalResults = this.finalResults;
     }
@@ -271,6 +279,8 @@ export class Room {
     // Suppress unused variable lint
     void colorCounts;
 
+    const authToken = this.playerAuthTokens.get(playerId);
+
     return {
       playerId: player.id,
       availableNumbers: player.availableNumbers,
@@ -282,6 +292,7 @@ export class Room {
       colorBonuses,
       finalScore,
       finalRank,
+      ...(authToken ? { authToken } : {}),
     };
   }
 

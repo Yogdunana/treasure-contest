@@ -11,6 +11,7 @@ import type { Room } from './room.js';
 import * as roomRepo from '../db/repositories/room-repo.js';
 import * as playerRepo from '../db/repositories/player-repo.js';
 import * as gemRepo from '../db/repositories/gem-repo.js';
+import { generateAuthToken } from '../identity/auth-token.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================================
@@ -55,6 +56,10 @@ export class GameEngine {
    * proceeds to the first round.
    */
   startGame(): void {
+    // Offline seats still occupy capacity and would receive missions / ranks.
+    // Drop them before the min-player check so only people present play.
+    this.dropOfflineSeats();
+
     const result = stateMachine.startGame(this.room);
     if (!result.success) {
       logger.warn('startGame failed', { error: result.error, room: this.room.code });
@@ -402,19 +407,39 @@ export class GameEngine {
     // Keep host/screen socket attachments. Drop offline seats so the next
     // lobby is joinable — leftover disconnected rows would fill capacity
     // and push new names into the queue.
-    for (const player of [...this.room.players.values()]) {
-      if (player.isConnected) continue;
-      this.room.players.delete(player.id);
+    this.dropOfflineSeats();
+
+    // gameSession bumped → old Layer-1 tokens are invalid. Mint new ones
+    // for remaining (connected) players and persist the reset player state
+    // so a process restart does not restore gems/missions from last game.
+    this.room.playerAuthTokens.clear();
+    for (const player of this.room.players.values()) {
+      const authToken = generateAuthToken(
+        player.id,
+        this.room.code,
+        this.room.gameSession,
+      );
+      this.room.playerAuthTokens.set(player.id, authToken);
       try {
-        playerRepo.deletePlayer(player.id);
+        playerRepo.updateAuthToken(player.id, authToken);
       } catch (err) {
-        logger.error('Failed to delete disconnected player on restart', {
+        logger.error('Failed to rotate auth token on restart', {
           error: err instanceof Error ? err.message : err,
           room: this.room.code,
           playerId: player.id,
         });
       }
+      this.syncPlayerState(player.id);
     }
+    try {
+      gemRepo.deleteGemsByRoom(this.room.code);
+    } catch (err) {
+      logger.error('Failed to clear gem rows on restart', {
+        error: err instanceof Error ? err.message : err,
+        room: this.room.code,
+      });
+    }
+
     this.logEvent('game_restart');
     this.syncToDB();
     this.broadcast();
@@ -454,23 +479,26 @@ export class GameEngine {
     if (!this.room.isPaused) return;
 
     const wasPhase = this.room.pausedPhase ?? 'LOBBY';
+    const paused = this.timerManager.peekPausedTimer();
     this.room.phase = wasPhase;
     this.room.isPaused = false;
-    this.room.pausedPhase = null;
+    // Keep pausedPhase until timers are restarted — resumeAll used to read
+    // it after it had already been cleared, which skipped every timer.
 
     this.logEvent('game_resumed');
     this.syncToDB();
     this.broadcast();
 
-    // Resume appropriate timer based on the phase we were in
-    if (wasPhase === 'NUMBER_SELECTION') {
+    if (wasPhase === 'RESULTS_REVEAL') {
+      this.resumeResultsReveal();
+    } else if (wasPhase === 'NUMBER_SELECTION') {
       this.timerManager.resumeAll(
         this.room,
         () => this.broadcast(),
         () => this.revealNumbers(),
+        wasPhase,
       );
     } else if (wasPhase === 'GEM_SELECTION') {
-      const playerId = this.room.getCurrentPickerId();
       this.timerManager.resumeAll(
         this.room,
         () => this.broadcast(),
@@ -478,8 +506,27 @@ export class GameEngine {
           if (pid) this.onGemPickTimeout(pid);
           else this.advanceToNextPicker();
         },
+        wasPhase,
       );
+    } else if (paused?.kind === 'delay') {
+      const remaining = Math.max(0, paused.remaining);
+      const key = paused.key;
+      this.timerManager.clearPausedTimer();
+      if (remaining <= 0) {
+        this.onDelayComplete(key);
+      } else {
+        this.timerManager.startPausableDelay(
+          this.room,
+          key,
+          remaining,
+          () => this.onDelayComplete(key),
+        );
+      }
     }
+
+    this.room.pausedPhase = null;
+    this.timerManager.clearPausedTimer();
+    this.syncToDB();
   }
 
   // ========================================================================
@@ -491,6 +538,15 @@ export class GameEngine {
    * Clears the picker's timer and advances to the next.
    */
   skipPlayer(playerId: string): void {
+    const currentPickerId = this.room.getCurrentPickerId();
+    if (!currentPickerId || currentPickerId !== playerId) {
+      logger.warn('skipPlayer ignored: not the current picker', {
+        room: this.room.code,
+        playerId,
+        currentPickerId,
+      });
+      return;
+    }
     this.timerManager.clear(`gem_pick_${playerId}`);
     this.logEvent('player_skipped', this.room.currentRound, undefined, playerId);
     this.advanceToNextPicker();
@@ -561,6 +617,92 @@ export class GameEngine {
   // ========================================================================
   // Private helpers
   // ========================================================================
+
+  /**
+   * Drop disconnected seats from memory and SQLite.
+   */
+  private dropOfflineSeats(): void {
+    for (const player of [...this.room.players.values()]) {
+      if (player.isConnected) continue;
+      this.room.players.delete(player.id);
+      this.room.playerAuthTokens.delete(player.id);
+      try {
+        playerRepo.deletePlayer(player.id);
+      } catch (err) {
+        logger.error('Failed to delete disconnected player', {
+          error: err instanceof Error ? err.message : err,
+          room: this.room.code,
+          playerId: player.id,
+        });
+      }
+    }
+  }
+
+  /**
+   * Resume the remaining worst→best result reveals after a pause.
+   */
+  private resumeResultsReveal(): void {
+    const sortedResults = [...this.room.finalResults].sort(
+      (a, b) => a.finalScore - b.finalScore,
+    );
+    const remaining = sortedResults.slice(this.room.revealedResultsCount);
+
+    remaining.forEach((result, index) => {
+      this.timerManager.startDelay(
+        `reveal_${this.room.revealedResultsCount + index}`,
+        (index + 1) * TIMING_CONFIG.FINAL_REVEAL_INTERVAL_MS,
+        () => {
+          this.room.revealedResultsCount++;
+          this.logEvent('result_revealed', undefined, undefined, result.playerId, {
+            rank: result.finalRank,
+            score: result.finalScore,
+          });
+          this.broadcast();
+        },
+      );
+    });
+
+    const totalRevealTime =
+      (remaining.length + 1) * TIMING_CONFIG.FINAL_REVEAL_INTERVAL_MS;
+    this.timerManager.startDelay('game_over', totalRevealTime, () => {
+      this.room.phase = 'GAME_OVER';
+      this.room.revealedResultsCount = this.room.finalResults.length;
+      this.logEvent('game_end');
+      this.syncToDB();
+      this.broadcast();
+    });
+  }
+
+  /**
+   * Complete a pausable delay whose remaining time just elapsed (or was 0).
+   */
+  private onDelayComplete(key: string): void {
+    switch (key) {
+      case 'gem_reveal':
+        this.startNumberSelectionPhase();
+        break;
+      case 'number_reveal':
+        this.calculateOrder();
+        break;
+      case 'order_calc':
+        this.startGemSelection();
+        break;
+      case 'round_end':
+        if (this.room.currentRound >= TOTAL_ROUNDS) {
+          this.calculateFinalScores();
+        } else {
+          this.startRound();
+        }
+        break;
+      default:
+        if (key.startsWith('reveal_') || key === 'game_over') {
+          this.resumeResultsReveal();
+        } else {
+          logger.warn('Unknown delay key on resume', { key, room: this.room.code });
+        }
+        break;
+    }
+  }
 
   /**
    * Start the timer for the current picker, or end the round if no picker.

@@ -282,6 +282,8 @@ export interface PlayerPrivateState {
   colorBonuses: ColorBonus[];
   finalScore: number | null;
   finalRank: number | null;
+  /** Present after join/restart so the client can persist a current-session token. */
+  authToken?: string;
 }
 
 /**

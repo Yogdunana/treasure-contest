@@ -9,11 +9,14 @@
  * their auth token, cookie, and fingerprint match.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { socket } from '../../lib/socket-client';
 import { useSocketStore } from '../../store/socket-store';
+import { saveAuthToLocal } from '../../lib/auth-storage';
+import { persistPlayerSession } from '../../lib/session';
+import type { RoomJoinAck } from '@treasure-contest/shared';
 import { fadeIn, scaleIn } from '../../animations/variants';
 
 export interface ReconnectFormProps {
@@ -28,9 +31,38 @@ export function ReconnectForm({ roomCode, onSuccess }: ReconnectFormProps) {
   const [seatNumber, setSeatNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const isConnected = useSocketStore((s) => s.isConnected);
   const connect = useSocketStore((s) => s.connect);
+
+  const emitReconnect = useCallback(
+    (name: string, seat: number) => {
+      socket.emit(
+        'room:reconnect_by_name',
+        {
+          roomCode,
+          playerName: name,
+          seatNumber: seat,
+        },
+        (ack: RoomJoinAck) => {
+          submittingRef.current = false;
+          setSubmitting(false);
+          if (!ack.success) {
+            setError(ack.error?.message ?? '重连失败，请检查名字和座位号');
+            return;
+          }
+          if (ack.playerId && ack.authToken) {
+            saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
+            void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+          }
+          useSocketStore.setState({ role: 'player', roomCode });
+          onSuccess?.();
+        },
+      );
+    },
+    [roomCode, onSuccess],
+  );
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -50,51 +82,31 @@ export function ReconnectForm({ roomCode, onSuccess }: ReconnectFormProps) {
 
       setError(null);
       setSubmitting(true);
+      submittingRef.current = true;
 
-      // Ensure socket is connected first
       if (!isConnected) {
         connect(roomCode, 'player');
-        // Wait for connection, then emit
         const checkInterval = setInterval(() => {
           if (useSocketStore.getState().isConnected) {
             clearInterval(checkInterval);
-            socket.emit('room:reconnect_by_name', {
-              roomCode,
-              playerName: name,
-              seatNumber: seat,
-            });
-            setSubmitting(false);
+            emitReconnect(name, seat);
           }
-        }, 500);
+        }, 400);
 
-        // Timeout after 10s
-        setTimeout(() => {
+        window.setTimeout(() => {
           clearInterval(checkInterval);
-          if (submitting) {
+          if (submittingRef.current) {
+            submittingRef.current = false;
             setError('连接超时，请重试');
             setSubmitting(false);
           }
         }, 10000);
-      } else {
-        socket.emit('room:reconnect_by_name', {
-          roomCode,
-          playerName: name,
-          seatNumber: seat,
-        });
-        setSubmitting(false);
+        return;
       }
 
-      // Listen for state:sync which indicates success
-      const handler = () => {
-        onSuccess?.();
-        socket.off('state:sync', handler);
-      };
-      socket.on('state:sync', handler);
-
-      // Clean up after 15s
-      setTimeout(() => socket.off('state:sync', handler), 15000);
+      emitReconnect(name, seat);
     },
-    [playerName, seatNumber, isConnected, connect, roomCode, onSuccess, submitting],
+    [playerName, seatNumber, isConnected, connect, roomCode, emitReconnect],
   );
 
   return (

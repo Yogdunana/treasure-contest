@@ -52,16 +52,22 @@ export function QueuePage({ roomCode: propRoomCode, playerName }: QueuePageProps
   const totalInQueue = useGameStore((s) => s.totalInQueue);
   const queueCount = useGameStore((s) => s.queueCount);
   const phase = useGameStore((s) => s.phase);
-  const playerId = useGameStore((s) => s.playerId);
+  const snapshotRole = useGameStore((s) => s.snapshotRole);
+  const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
 
   const { leaveQueue } = useQueue();
 
-  // When promoted (playerId becomes non-null), redirect to game page
+  // Only leave the queue UI after THIS room actually seats us as a player.
+  // A leftover playerId from a previous room used to auto-navigate immediately.
   useEffect(() => {
-    if (playerId && roomCode) {
+    if (
+      snapshotRole === 'player' &&
+      roomCode &&
+      snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
+    ) {
       navigate(`/play/${roomCode}/game`);
     }
-  }, [playerId, roomCode, navigate]);
+  }, [snapshotRole, snapshotRoomCode, roomCode, navigate]);
 
   const handleLeaveQueue = useCallback(() => {
     leaveQueue();

@@ -45,8 +45,6 @@ export function usePlayerActions(): UsePlayerActionsReturn {
       if (state.phase !== 'NUMBER_SELECTION') return false;
 
       socket.emit('action:submit_number', { number });
-      // Optimistically update local state; server will confirm via state:sync
-      useGameStore.setState({ roundSubmission: number });
       return true;
     },
     [isConnected],

@@ -62,54 +62,68 @@ export default function HostPanelPage() {
   const error = useSocketStore((s) => s.error);
   const socketRoomCode = useSocketStore((s) => s.roomCode);
   const connect = useSocketStore((s) => s.connect);
+  const ensureJoined = useSocketStore((s) => s.ensureJoined);
+  const clearError = useSocketStore((s) => s.clearError);
 
   const phase = useGameStore((s) => s.phase);
   const currentRound = useGameStore((s) => s.currentRound);
   const allPlayers = useGameStore((s) => s.allPlayers);
   const playerSeats = useGameStore((s) => s.playerSeats);
+  const snapshotRole = useGameStore((s) => s.snapshotRole);
+  const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
   const { isPaused } = useGamePhase();
 
-  const reconnectAttemptedRef = useRef(false);
+  const joined =
+    snapshotRole === 'host' &&
+    Boolean(roomCode) &&
+    snapshotRoomCode?.toUpperCase() === roomCode?.toUpperCase();
 
-  // ── Ensure socket connection ──────────────────────────────────────────
+  const retryRef = useRef<number | null>(null);
+
+  // ── Open the socket as host (works even if already connected as another role)
   useEffect(() => {
     if (!roomCode) return;
-    if (reconnectAttemptedRef.current) return;
-    reconnectAttemptedRef.current = true;
-
-    // Already connected (e.g., navigated from HostCreatePage)
-    if (isConnected) {
-      // Update roomCode in the store to match the URL if needed
-      if (socketRoomCode !== roomCode) {
-        useSocketStore.setState({ roomCode });
-      }
-      return;
-    }
-
-    // Need to connect — hostToken must already be in localStorage
     if (!getHostAuth(roomCode)) {
       useSocketStore.setState({
         error: '主持人凭证丢失，请重新创建房间或使用本机创建时的浏览器打开控制台',
       });
       return;
     }
-    if (!isConnecting) {
-      connect(roomCode, 'host');
-    }
+    clearError();
+    connect(roomCode, 'host');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roomCode]);
 
-  // ── Keep socket store roomCode in sync with URL ────────────────────────
+  // ── Join / re-join until we actually receive a HostSnapshot ───────────
   useEffect(() => {
-    if (isConnected && roomCode && socketRoomCode !== roomCode) {
-      useSocketStore.setState({ roomCode });
-    }
-  }, [isConnected, roomCode, socketRoomCode]);
+    if (!roomCode || !isConnected || joined) return;
+    if (!getHostAuth(roomCode)) return;
+
+    ensureJoined(roomCode, 'host');
+
+    retryRef.current = window.setInterval(() => {
+      const store = useGameStore.getState();
+      if (
+        store.snapshotRole === 'host' &&
+        store.snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
+      ) {
+        return;
+      }
+      useSocketStore.getState().ensureJoined(roomCode, 'host');
+    }, 2500);
+
+    return () => {
+      if (retryRef.current !== null) {
+        window.clearInterval(retryRef.current);
+        retryRef.current = null;
+      }
+    };
+  }, [roomCode, isConnected, joined, ensureJoined]);
 
   const connectedPlayers = playerSeats.filter((p) => p.isConnected).length;
 
   // ── Loading state ──────────────────────────────────────────────────────
-  if (!isConnected && !error) {
+  if (!joined && !error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950 text-slate-400">
         <svg
@@ -142,7 +156,7 @@ export default function HostPanelPage() {
   }
 
   // ── Error state ────────────────────────────────────────────────────────
-  if (error && !isConnected) {
+  if (error && !joined) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 p-6 text-slate-400">
         <div className="rounded-xl border border-rose-800/50 bg-rose-950/20 px-6 py-4 text-center">
@@ -152,8 +166,7 @@ export default function HostPanelPage() {
         <div className="flex gap-2">
           <button
             onClick={() => {
-              useSocketStore.getState().clearError();
-              reconnectAttemptedRef.current = false;
+              clearError();
               if (roomCode) connect(roomCode, 'host');
             }}
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-bold text-white hover:bg-violet-500"
