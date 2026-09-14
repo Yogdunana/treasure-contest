@@ -201,6 +201,45 @@ function StatCard({
 }
 
 // ---------------------------------------------------------------------------
+// Admin auth state
+// ---------------------------------------------------------------------------
+
+const ADMIN_TOKEN_KEY = 'tc_admin_token';
+
+/** Read stored token from localStorage. */
+function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Store token in localStorage. */
+function setStoredToken(token: string): void {
+  try {
+    localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  } catch {
+    // ignore
+  }
+}
+
+/** Remove stored token. */
+function clearStoredToken(): void {
+  try {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Build fetch headers with token if available. */
+function authHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ---------------------------------------------------------------------------
 // Inline SVG icons
 // ---------------------------------------------------------------------------
 
@@ -276,12 +315,169 @@ function HomeIcon({ className }: { className?: string }) {
   );
 }
 
+function LockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 1 1 8 0v4" />
+      <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function LogoutIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Login form component
+// ---------------------------------------------------------------------------
+
+function LoginForm({ onSuccess, onBack }: { onSuccess: () => void; onBack: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!password) {
+        setError('请输入密码');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ password }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || '登录失败');
+          return;
+        }
+
+        // Store token for Authorization header (in addition to cookie).
+        if (data.token) {
+          setStoredToken(data.token);
+        }
+
+        onSuccess();
+      } catch {
+        setError('网络错误，请稍后重试');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [password, onSuccess],
+  );
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="w-full max-w-sm"
+      >
+        <div className="mb-6 flex flex-col items-center gap-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/15">
+            <LockIcon className="h-8 w-8 text-violet-400" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-100">管理后台登录</h1>
+          <p className="text-sm text-slate-500">请输入管理密码以继续</p>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6"
+        >
+          {error && (
+            <div className="mb-4 rounded-lg border border-rose-800/50 bg-rose-950/30 px-4 py-2.5 text-sm text-rose-400">
+              {error}
+            </div>
+          )}
+
+          <div className="mb-5">
+            <label className="mb-1.5 block text-xs font-medium text-slate-400">
+              管理密码
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+              autoComplete="current-password"
+              className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30"
+              placeholder="••••••••"
+              disabled={loading}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                登录中...
+              </>
+            ) : (
+              '登录'
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-3 w-full text-center text-xs text-slate-500 transition-colors hover:text-slate-400"
+          >
+            返回首页
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
+
+  // ── Auth state ─────────────────────────────────────────────────────────
+  const [authed, setAuthed] = useState<boolean | null>(null); // null = checking
+
+  // Check auth on mount
+  useEffect(() => {
+    const token = getStoredToken();
+    if (!token) {
+      setAuthed(false);
+      return;
+    }
+    // Verify token with server
+    fetch('/api/admin/check', { credentials: 'include', headers: authHeaders() })
+      .then((res) => setAuthed(res.ok))
+      .catch(() => setAuthed(false));
+  }, []);
 
   // ── Data state ─────────────────────────────────────────────────────────
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -303,12 +499,20 @@ export default function AdminDashboardPage() {
     setLoading(true);
     setError(null);
     try {
+      const reqInit: RequestInit = { credentials: 'include', headers: authHeaders() };
       const [statsRes, gamesRes, missionsRes, playersRes] = await Promise.all([
-        fetch('/api/admin/stats'),
-        fetch('/api/admin/games'),
-        fetch('/api/admin/missions'),
-        fetch('/api/admin/players'),
+        fetch('/api/admin/stats', reqInit),
+        fetch('/api/admin/games', reqInit),
+        fetch('/api/admin/missions', reqInit),
+        fetch('/api/admin/players', reqInit),
       ]);
+
+      // If any request returns 401, token expired — kick back to login.
+      if ([statsRes, gamesRes, missionsRes, playersRes].some((r) => r.status === 401)) {
+        clearStoredToken();
+        setAuthed(false);
+        return;
+      }
 
       const responses = [statsRes, gamesRes, missionsRes, playersRes];
       for (const res of responses) {
@@ -341,7 +545,36 @@ export default function AdminDashboardPage() {
 
   // ── CSV export ─────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
-    window.location.href = '/api/admin/export';
+    // Use a fetch + blob approach to include auth headers.
+    fetch('/api/admin/export', { credentials: 'include', headers: authHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error('导出失败');
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'treasure-contest-export.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : '导出失败'));
+  }, []);
+
+  // ── Logout ─────────────────────────────────────────────────────────────
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: authHeaders(),
+      });
+    } catch {
+      // ignore network errors on logout
+    }
+    clearStoredToken();
+    setAuthed(false);
   }, []);
 
   // ── Sort handlers ──────────────────────────────────────────────────────
@@ -399,6 +632,31 @@ export default function AdminDashboardPage() {
     if (missions.length === 0) return 0;
     return Math.min(...missions.map((m) => m.completionRate));
   }, [missions]);
+
+  // ── Auth gate: show login or checking state ────────────────────────────
+  if (authed === null) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 text-slate-400">
+        <svg className="h-10 w-10 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        <p className="text-sm">正在验证身份...</p>
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return (
+      <LoginForm
+        onSuccess={() => {
+          setAuthed(true);
+          fetchData();
+        }}
+        onBack={() => navigate('/')}
+      />
+    );
+  }
 
   // ── Loading state ──────────────────────────────────────────────────────
   if (loading) {
@@ -462,6 +720,13 @@ export default function AdminDashboardPage() {
             >
               <RefreshIcon className="h-3.5 w-3.5" />
               刷新
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-lg border border-rose-800/50 px-3 py-2 text-xs font-medium text-rose-400 transition-colors hover:border-rose-700 hover:text-rose-300"
+            >
+              <LogoutIcon className="h-3.5 w-3.5" />
+              退出登录
             </button>
             <button
               onClick={() => navigate('/')}

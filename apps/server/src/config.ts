@@ -34,6 +34,19 @@ export const config = {
   get isProduction(): boolean {
     return this.nodeEnv === 'production';
   },
+
+  /**
+   * Password required to access the admin dashboard (`/admin`).
+   * In development this defaults to `admin123` for convenience.
+   * In production it MUST be set via the `ADMIN_PASSWORD` environment variable.
+   */
+  adminPassword: process.env.ADMIN_PASSWORD ?? (process.env.NODE_ENV === 'production' ? '' : 'admin123'),
+
+  /**
+   * Secret key used to sign admin auth tokens.
+   * Defaults to the admin password itself if not explicitly provided.
+   */
+  adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? process.env.ADMIN_PASSWORD ?? 'dev-admin-secret',
 } as const;
 
 export type Config = typeof config;

@@ -142,6 +142,8 @@ docker run -d \
 | `CORS_ORIGIN` | `http://localhost:5173` | 允许跨域的前端地址 |
 | `PUBLIC_URL` | `http://localhost:5173` | 前端公开访问地址（用于生成二维码） |
 | `NODE_ENV` | `development` | 运行环境 |
+| `ADMIN_PASSWORD` | `admin123`(dev) | 管理后台密码，生产环境必须设置 |
+| `ADMIN_JWT_SECRET` | 同 `ADMIN_PASSWORD` | 签名管理 token 的密钥 |
 
 ## 游戏规则详解
 
@@ -260,12 +262,16 @@ docker run -d \
 
 ## 管理后台
 
-访问 `/admin` 进入管理后台，支持：
+访问 `/admin` 进入管理后台，需要输入管理密码（开发环境默认 `admin123`，生产环境通过 `ADMIN_PASSWORD` 环境变量配置）。
+
+功能包括：
 
 - 查看所有房间状态与游戏进度
 - 查看当日统计数据（场次、参与人数、平均时长）
 - 查看操作日志
-- 导出数据
+- 导出数据（CSV）
+
+**认证机制**：登录后服务端签发 HMAC-SHA256 签名 token（有效期 8 小时），同时通过 HTTP-only Cookie 和 localStorage 双通道保存，所有 API 端点均需认证才能访问。
 
 ## 开发命令
 

@@ -1,8 +1,10 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { getDb } from '../db/connection.js';
 import { getTodayGameCount } from '../db/repositories/history-repo.js';
 import { ALL_MISSIONS } from '@treasure-contest/shared';
 import type { PlayerMission } from '@treasure-contest/shared';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================================
@@ -133,6 +135,91 @@ function aggregateMissionStats(): Map<string, { appearedCount: number; completed
 }
 
 // ============================================================================
+// Admin Authentication
+// ============================================================================
+
+/** Token expiry: 8 hours (a full event day). */
+const TOKEN_EXPIRY_MS = 8 * 60 * 60 * 1000;
+
+/** Name of the auth cookie. */
+const ADMIN_COOKIE_NAME = 'tc_admin_token';
+
+/**
+ * Create a signed token: base64(payload) + HMAC-SHA256 signature.
+ * Payload contains expiry timestamp only (stateless, no user identity needed).
+ */
+function createAdminToken(): string {
+  const payload = JSON.stringify({ exp: Date.now() + TOKEN_EXPIRY_MS });
+  const payloadB64 = Buffer.from(payload, 'utf-8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', config.adminJwtSecret)
+    .update(payloadB64)
+    .digest('base64url');
+  return `${payloadB64}.${sig}`;
+}
+
+/**
+ * Verify a signed token. Returns true if the token is valid and not expired.
+ */
+function verifyAdminToken(token: string): boolean {
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+
+  const [payloadB64, sig] = parts;
+  const expectedSig = crypto
+    .createHmac('sha256', config.adminJwtSecret)
+    .update(payloadB64)
+    .digest('base64url');
+
+  // Use timingSafeEqual to prevent timing attacks.
+  try {
+    const sigBuf = Buffer.from(sig);
+    const expectedBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expectedBuf.length) return false;
+    if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
+  } catch {
+    return false;
+  }
+
+  // Check expiry.
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+    if (typeof payload.exp !== 'number' || Date.now() > payload.exp) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Express middleware: reject requests that lack a valid admin token.
+ *
+ * The token is read from either:
+ * 1. The `tc_admin_token` HTTP-only cookie (set on login), or
+ * 2. The `Authorization: Bearer <token>` header (for API-only usage).
+ */
+function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
+  // Check cookie first.
+  const cookieToken = req.cookies?.[ADMIN_COOKIE_NAME];
+  if (cookieToken && verifyAdminToken(cookieToken)) {
+    next();
+    return;
+  }
+
+  // Check Authorization header.
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const headerToken = authHeader.slice(7);
+    if (verifyAdminToken(headerToken)) {
+      next();
+      return;
+    }
+  }
+
+  res.status(401).json({ error: '未授权，请先登录' });
+}
+
+// ============================================================================
 // Route factory
 // ============================================================================
 
@@ -148,6 +235,59 @@ function aggregateMissionStats(): Map<string, { appearedCount: number; completed
  */
 export function createAdminRouter(): Router {
   const router = Router();
+
+  // -- POST /login ----------------------------------------------------------
+  // Authenticate with a password and receive an HTTP-only cookie + JSON token.
+  // This route is public (no auth middleware) — it IS the auth entry point.
+  router.post('/login', (req: Request, res: Response) => {
+    const { password } = req.body as { password?: string };
+
+    if (!password) {
+      res.status(400).json({ error: '请输入密码' });
+      return;
+    }
+
+    // Prevent brute-force: constant-time comparison.
+    const provided = Buffer.from(String(password));
+    const expected = Buffer.from(config.adminPassword);
+    const isValid =
+      provided.length === expected.length &&
+      crypto.timingSafeEqual(provided, expected);
+
+    if (!isValid) {
+      res.status(401).json({ error: '密码错误' });
+      return;
+    }
+
+    const token = createAdminToken();
+
+    // Set HTTP-only cookie for browser-based dashboard.
+    res.cookie(ADMIN_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: config.isProduction,
+      sameSite: config.isProduction ? 'strict' : 'lax',
+      maxAge: TOKEN_EXPIRY_MS,
+      path: '/',
+    });
+
+    // Also return token in JSON for non-browser clients.
+    res.json({ success: true, token });
+  });
+
+  // -- POST /logout ---------------------------------------------------------
+  router.post('/logout', (_req: Request, res: Response) => {
+    res.clearCookie(ADMIN_COOKIE_NAME, { path: '/' });
+    res.json({ success: true });
+  });
+
+  // -- GET /check -----------------------------------------------------------
+  // Lightweight endpoint to check if the current cookie/token is valid.
+  router.get('/check', requireAdminAuth, (_req: Request, res: Response) => {
+    res.json({ authenticated: true });
+  });
+
+  // ── All routes below require authentication ────────────────────────────
+  router.use(requireAdminAuth);
 
   // -- GET /stats -----------------------------------------------------------
   router.get('/stats', (_req: Request, res: Response) => {
