@@ -1,5 +1,6 @@
 import type { GamePhase, FinalResult } from '@treasure-contest/shared';
 import {
+  MIN_PLAYERS,
   TIMING_CONFIG,
   TOTAL_ROUNDS,
 } from '@treasure-contest/shared';
@@ -55,6 +56,24 @@ export class GameEngine {
    * proceeds to the first round.
    */
   startGame(): void {
+    // Only drop ghosts when the game can actually start — a premature
+    // startGame must not wipe same-name reclaimable lobby seats.
+    if (this.room.getConnectedPlayers().length >= MIN_PLAYERS) {
+      for (const player of [...this.room.players.values()]) {
+        if (player.isConnected) continue;
+        this.room.players.delete(player.id);
+        try {
+          playerRepo.deletePlayer(player.id);
+        } catch (err) {
+          logger.error('Failed to delete disconnected player on start', {
+            error: err instanceof Error ? err.message : err,
+            room: this.room.code,
+            playerId: player.id,
+          });
+        }
+      }
+    }
+
     const result = stateMachine.startGame(this.room);
     if (!result.success) {
       logger.warn('startGame failed', { error: result.error, room: this.room.code });

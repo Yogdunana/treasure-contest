@@ -443,6 +443,28 @@ export class RoomManager {
   }
 
   /**
+   * Remove one seated player (typically a disconnected leftover) so a
+   * new lobby joiner can take a seat instead of entering the queue.
+   */
+  removePlayerFromRoom(code: string, playerId: string): boolean {
+    const room = this.rooms.get(normalizeRoomCode(code));
+    if (!room) return false;
+    if (!room.players.has(playerId)) return false;
+
+    room.players.delete(playerId);
+    try {
+      playerRepo.deletePlayer(playerId);
+    } catch (err) {
+      logger.error('Failed to delete evicted lobby player', {
+        error: err instanceof Error ? err.message : err,
+        room: room.code,
+        playerId,
+      });
+    }
+    return true;
+  }
+
+  /**
    * Remove disconnected players from a room (and from SQLite).
    * Used after a game restart: old auth tokens are already invalid, and
    * leftover offline seats would block new joiners into the waiting queue.

@@ -53,7 +53,7 @@ describe('decideLobbyJoin', () => {
     expect(decision).toEqual({ action: 'join_new' });
   });
 
-  it('queues a new name only after reclaimable disconnected seats are considered', () => {
+  it('evicts a disconnected seat for a new name when connected count is below target', () => {
     const fullRoom = [
       p('a', 'Alice', true),
       p('b', 'Bob', false),
@@ -68,7 +68,7 @@ describe('decideLobbyJoin', () => {
         targetPlayers: 4,
         queueLength: 0,
       }),
-    ).toEqual({ action: 'queue' });
+    ).toEqual({ action: 'join_new', evictPlayerId: 'b' });
 
     expect(
       decideLobbyJoin({
@@ -78,6 +78,49 @@ describe('decideLobbyJoin', () => {
         queueLength: 0,
       }),
     ).toEqual({ action: 'reconnect', playerId: 'b' });
+  });
+
+  it('lets a new name sit after a post-restart mass-disconnect (CNEZFP)', () => {
+    const allOffline = [
+      p('a', 'Alice', false),
+      p('b', 'Bob', false),
+      p('c', 'Cara', false),
+      p('d', 'Dan', false),
+    ];
+
+    expect(
+      decideLobbyJoin({
+        players: allOffline,
+        playerName: 'Eve',
+        targetPlayers: 4,
+        queueLength: 0,
+      }),
+    ).toEqual({ action: 'join_new', evictPlayerId: 'a' });
+
+    expect(
+      decideLobbyJoin({
+        players: allOffline,
+        playerName: 'Alice',
+        targetPlayers: 4,
+        queueLength: 0,
+      }),
+    ).toEqual({ action: 'reconnect', playerId: 'a' });
+  });
+
+  it('queues a new name only when enough players are already connected', () => {
+    expect(
+      decideLobbyJoin({
+        players: [
+          p('a', 'Alice', true),
+          p('b', 'Bob', true),
+          p('c', 'Cara', true),
+          p('d', 'Dan', true),
+        ],
+        playerName: 'Eve',
+        targetPlayers: 4,
+        queueLength: 0,
+      }),
+    ).toEqual({ action: 'queue' });
   });
 
   it('does not treat a one-shot iterator as an empty room', () => {

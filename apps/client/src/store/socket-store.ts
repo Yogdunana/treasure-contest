@@ -143,6 +143,11 @@ function registerEventListeners(): void {
 
   // ── Error ─────────────────────────────────────────────────────────────
   socket.on('error', (payload: ErrorPayload) => {
+    const role = useSocketStore.getState().role;
+    // Screen tabs retry until the room exists (host may still be creating it).
+    if (role === 'screen' && payload.code === 'ROOM_NOT_FOUND') {
+      return;
+    }
     useSocketStore.setState({ error: payload.message });
   });
 }
@@ -198,8 +203,17 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
           playerName: 'screen',
           role: 'screen',
         },
-        (_ack: RoomJoinAck) => {
-          // Ack is optional; state:sync is the source of truth.
+        (ack: RoomJoinAck) => {
+          if (!ack) return;
+          if (ack.success) {
+            set({ error: null });
+            return;
+          }
+          // Room may appear a moment later; ScreenPage keeps retrying.
+          if (ack.error?.code === 'ROOM_NOT_FOUND') {
+            return;
+          }
+          set({ error: ack.error?.message ?? '加入房间失败' });
         },
       );
     } else if (nextRole === 'player') {

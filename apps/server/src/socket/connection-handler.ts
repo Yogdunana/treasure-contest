@@ -251,6 +251,17 @@ function handlePlayerJoin(
     }
 
     if (decision.action === 'join_new') {
+      if (decision.evictPlayerId) {
+        const evicted = room.players.get(decision.evictPlayerId);
+        roomManager.removePlayerFromRoom(room.code, decision.evictPlayerId);
+        logger.info('Evicted disconnected lobby seat for new joiner', {
+          room: room.code,
+          evictedPlayerId: decision.evictPlayerId,
+          evictedName: evicted?.name,
+          incomingName: playerName,
+        });
+      }
+
       const result = roomManager.addPlayerToRoom(
         room.code,
         playerName,
@@ -457,7 +468,9 @@ function handleScreenJoin(
   socket.data.roomCode = room.code;
   socket.data.role = 'screen';
 
-  // Broadcast current state to all (screen gets ScreenSnapshot)
+  // Direct snapshot first: refresh / mid-game join must not wait on
+  // async fetchSockets() after socket.join(), which can miss this socket.
+  broadcaster.sendSnapshot(socket, room);
   broadcaster.broadcast(room);
 
   logger.info('Screen joined room', {
@@ -465,6 +478,7 @@ function handleScreenJoin(
     socketId: socket.id,
     phase: room.phase,
     players: room.players.size,
+    connectedPlayers: room.getConnectedPlayers().length,
     session: room.gameSession,
   });
 }
