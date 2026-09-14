@@ -399,9 +399,32 @@ export class GameEngine {
   restartGame(): void {
     this.timerManager.clearAll();
     stateMachine.restartGame(this.room);
+    // Keep host/screen socket attachments. Drop offline seats so the next
+    // lobby is joinable — leftover disconnected rows would fill capacity
+    // and push new names into the queue.
+    for (const player of [...this.room.players.values()]) {
+      if (player.isConnected) continue;
+      this.room.players.delete(player.id);
+      try {
+        playerRepo.deletePlayer(player.id);
+      } catch (err) {
+        logger.error('Failed to delete disconnected player on restart', {
+          error: err instanceof Error ? err.message : err,
+          room: this.room.code,
+          playerId: player.id,
+        });
+      }
+    }
     this.logEvent('game_restart');
     this.syncToDB();
     this.broadcast();
+    logger.info('Game restarted', {
+      room: this.room.code,
+      session: this.room.gameSession,
+      players: this.room.players.size,
+      screenAttached: Boolean(this.room.screenSocketId),
+      hostAttached: Boolean(this.room.hostSocketId),
+    });
   }
 
   // ========================================================================

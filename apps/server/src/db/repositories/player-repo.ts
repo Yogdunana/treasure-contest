@@ -282,6 +282,14 @@ export function getPlayersByRoom(roomCode: string): PlayerRecord[] {
 }
 
 /**
+ * Delete a single player row (used when restarting and dropping a disconnected seat).
+ */
+export function deletePlayer(id: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+}
+
+/**
  * Delete all players belonging to a room (used on room teardown).
  */
 export function deletePlayersByRoom(roomCode: string): number {

@@ -26,6 +26,7 @@ import type {
   QueuePromotedPayload,
   QueueUpdatePayload,
   TimerTickPayload,
+  RoomJoinAck,
 } from '@treasure-contest/shared';
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,8 @@ export interface SocketStore {
 
   // Actions
   connect: (roomCode: string, role: ClientRole) => void;
+  /** Emit the role-specific join/reconnect for an already-open socket. */
+  ensureJoined: (roomCode?: string, role?: ClientRole) => void;
   disconnect: () => void;
   clearError: () => void;
 }
@@ -70,36 +73,8 @@ function registerEventListeners(): void {
     useUIStore.getState().setShowDisconnectedBanner(false);
 
     // After a transport reconnect the socket is a new ID and is no longer
-    // in the Socket.io room. Re-join host/screen so broadcasts resume.
-    const { roomCode, role } = useSocketStore.getState();
-    if (!roomCode || roomCode === '__pending__') return;
-
-    if (role === 'host') {
-      const host = getHostAuth(roomCode);
-      if (host?.hostToken) {
-        socket.emit('room:join', {
-          roomCode,
-          playerName: host.hostName || 'host',
-          role: 'host',
-          hostToken: host.hostToken,
-        });
-      }
-    } else if (role === 'screen') {
-      socket.emit('room:join', {
-        roomCode,
-        playerName: 'screen',
-        role: 'screen',
-      });
-    } else if (role === 'player') {
-      const stored = getAuthFromLocal(roomCode);
-      if (stored) {
-        socket.emit('room:reconnect', {
-          roomCode,
-          playerId: stored.playerId,
-          authToken: stored.authToken,
-        });
-      }
-    }
+    // in the Socket.io room. Re-join so broadcasts resume.
+    useSocketStore.getState().ensureJoined();
   });
 
   socket.on('disconnect', () => {
@@ -191,12 +166,56 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
   roomCode: null,
   role: null,
 
-  connect: (roomCode, role) => {
-    // Prevent double-connecting
-    if (socket.connected || get().isConnecting) return;
+  ensureJoined: (roomCode, role) => {
+    const state = get();
+    const code = roomCode ?? state.roomCode;
+    const nextRole = role ?? state.role;
+    if (!code || code === '__pending__' || !nextRole) return;
+    if (!socket.connected) return;
 
+    if (role || roomCode) {
+      set({
+        roomCode: code,
+        role: nextRole,
+      });
+    }
+
+    if (nextRole === 'host') {
+      const host = getHostAuth(code);
+      if (host?.hostToken) {
+        socket.emit('room:join', {
+          roomCode: code,
+          playerName: host.hostName || 'host',
+          role: 'host',
+          hostToken: host.hostToken,
+        });
+      }
+    } else if (nextRole === 'screen') {
+      socket.emit(
+        'room:join',
+        {
+          roomCode: code,
+          playerName: 'screen',
+          role: 'screen',
+        },
+        (_ack: RoomJoinAck) => {
+          // Ack is optional; state:sync is the source of truth.
+        },
+      );
+    } else if (nextRole === 'player') {
+      const stored = getAuthFromLocal(code);
+      if (stored) {
+        socket.emit('room:reconnect', {
+          roomCode: code,
+          playerId: stored.playerId,
+          authToken: stored.authToken,
+        });
+      }
+    }
+  },
+
+  connect: (roomCode, role) => {
     set({
-      isConnecting: true,
       error: null,
       roomCode,
       role,
@@ -209,18 +228,29 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
       }
     }
 
+    // Socket already open (e.g. host tab later opens /screen/:code, or
+    // React remount). Do not no-op — emit the role join immediately.
+    if (socket.connected) {
+      set({ isConnected: true, isConnecting: false });
+      get().ensureJoined(roomCode, role);
+      return;
+    }
+
+    if (get().isConnecting) {
+      // Handshake in flight; the connect handler will ensureJoined
+      // with the role/roomCode we just stored.
+      return;
+    }
+
+    set({ isConnecting: true });
+
     // Register listeners before connecting so we don't miss the initial
     // state:sync event that the server sends immediately on connection.
     registerEventListeners();
     socket.connect();
 
-    // Attempt automatic reconnection via stored auth (Layer 1).
-    // The actual reconnect emission happens after the socket is confirmed
-    // connected — handled by the calling hook / page component.
-    // Here we just prepare the fingerprint for Layer-3 fallback.
     const stored = getAuthFromLocal(roomCode);
     if (!stored) {
-      // Pre-generate the fingerprint so it's ready if needed
       generateFingerprint();
     }
   },

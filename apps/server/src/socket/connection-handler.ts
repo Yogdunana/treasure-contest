@@ -441,7 +441,8 @@ function handleScreenJoin(
   room: Room,
   broadcaster: Broadcaster,
 ): void {
-  // Set the screen socket ID on the room
+  // A later screen tab replaces the previous one. Do not require a
+  // particular phase — GAME_OVER / post-restart LOBBY must still attach.
   room.screenSocketId = socket.id;
 
   // Update DB
@@ -462,6 +463,9 @@ function handleScreenJoin(
   logger.info('Screen joined room', {
     room: room.code,
     socketId: socket.id,
+    phase: room.phase,
+    players: room.players.size,
+    session: room.gameSession,
   });
 }
 

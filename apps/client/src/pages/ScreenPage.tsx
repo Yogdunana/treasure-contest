@@ -3,19 +3,17 @@
  *
  * Route: /screen/:roomCode
  *
- * Connects to the socket with role='screen' and renders the ScreenDisplay
- * component, which shows the public game state: gems, revealed numbers,
- * selection order, collision groups, player seats, and timer.
- *
- * The screen receives only public state (no secret information like
- * players' numbers, missions, or scores).
- *
- * Full-screen layout optimized for 1920x1080+ displays (TV/projector).
+ * Always emits `room:join` with role='screen' after the socket is up,
+ * including when the socket was already connected as another role
+ * (homepage → 大屏, or a leftover host handshake). Waits for a
+ * ScreenSnapshot before rendering so a bare connection is not treated
+ * as "joined with 0 players".
  */
 
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSocketStore } from '../store/socket-store';
+import { useGameStore } from '../store/game-store';
 import { ScreenDisplay } from '../components/screen';
 
 export default function ScreenPage() {
@@ -24,44 +22,55 @@ export default function ScreenPage() {
   const isConnected = useSocketStore((s) => s.isConnected);
   const isConnecting = useSocketStore((s) => s.isConnecting);
   const error = useSocketStore((s) => s.error);
-  const socketRoomCode = useSocketStore((s) => s.roomCode);
-  const role = useSocketStore((s) => s.role);
   const connect = useSocketStore((s) => s.connect);
+  const ensureJoined = useSocketStore((s) => s.ensureJoined);
   const clearError = useSocketStore((s) => s.clearError);
 
-  const reconnectAttemptedRef = useRef(false);
+  const snapshotRole = useGameStore((s) => s.snapshotRole);
+  const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
 
-  // ── Ensure socket connection on mount ──────────────────────────────────
+  const joined =
+    snapshotRole === 'screen' &&
+    Boolean(roomCode) &&
+    snapshotRoomCode?.toUpperCase() === roomCode?.toUpperCase();
+
+  const retryRef = useRef<number | null>(null);
+
+  // ── Open the socket as screen (works even if already connected) ────────
   useEffect(() => {
     if (!roomCode) return;
-    if (reconnectAttemptedRef.current) return;
-    reconnectAttemptedRef.current = true;
-
-    // Already connected as screen — just update the roomCode if needed
-    if (isConnected && role === 'screen') {
-      if (socketRoomCode !== roomCode) {
-        useSocketStore.setState({ roomCode });
-      }
-      return;
-    }
-
-    // Need to connect
-    if (!isConnecting) {
-      clearError();
-      connect(roomCode, 'screen');
-    }
+    clearError();
+    connect(roomCode, 'screen');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roomCode]);
 
-  // ── Keep socket store roomCode in sync with URL ────────────────────────
+  // ── Join / re-join until we actually receive a ScreenSnapshot ──────────
   useEffect(() => {
-    if (isConnected && roomCode && socketRoomCode !== roomCode && role === 'screen') {
-      useSocketStore.setState({ roomCode });
-    }
-  }, [isConnected, roomCode, socketRoomCode, role]);
+    if (!roomCode || !isConnected || joined) return;
 
-  // ── Loading state ──────────────────────────────────────────────────────
-  if (!isConnected && !error) {
+    ensureJoined(roomCode, 'screen');
+
+    retryRef.current = window.setInterval(() => {
+      const store = useGameStore.getState();
+      if (
+        store.snapshotRole === 'screen' &&
+        store.snapshotRoomCode?.toUpperCase() === roomCode.toUpperCase()
+      ) {
+        return;
+      }
+      useSocketStore.getState().ensureJoined(roomCode, 'screen');
+    }, 2500);
+
+    return () => {
+      if (retryRef.current !== null) {
+        window.clearInterval(retryRef.current);
+        retryRef.current = null;
+      }
+    };
+  }, [roomCode, isConnected, joined, ensureJoined]);
+
+  // ── Loading until the server accepts us as screen ──────────────────────
+  if (!joined && !error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 text-slate-400">
         <svg
@@ -84,7 +93,7 @@ export default function ScreenPage() {
           />
         </svg>
         <p className="text-xl">
-          {isConnecting ? '正在连接大屏幕...' : '正在连接...'}
+          {isConnecting || !isConnected ? '正在连接大屏幕...' : '正在加入房间...'}
         </p>
         {roomCode && (
           <p className="text-sm text-slate-600">房间: {roomCode}</p>
@@ -93,8 +102,7 @@ export default function ScreenPage() {
     );
   }
 
-  // ── Error state ────────────────────────────────────────────────────────
-  if (error && !isConnected) {
+  if (error && !joined) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 p-6 text-slate-400">
         <div className="rounded-2xl border border-rose-800/50 bg-rose-950/20 px-8 py-6 text-center">
@@ -104,7 +112,6 @@ export default function ScreenPage() {
         <button
           onClick={() => {
             clearError();
-            reconnectAttemptedRef.current = false;
             if (roomCode) connect(roomCode, 'screen');
           }}
           className="rounded-lg bg-violet-600 px-6 py-3 text-base font-bold text-white transition-colors hover:bg-violet-500"
@@ -118,6 +125,5 @@ export default function ScreenPage() {
     );
   }
 
-  // ── Main screen display ─────────────────────────────────────────────────
   return <ScreenDisplay />;
 }

@@ -77,6 +77,20 @@ describe('lobby disconnect then same-name rejoin', () => {
     expect(room.players.size).toBe(4);
   });
 
+  it('dropDisconnectedPlayers frees offline seats for the next lobby', () => {
+    const rooms = new RoomManager();
+    const { roomCode } = rooms.createRoom('Host', 4);
+    rooms.addPlayerToRoom(roomCode, 'Alice', 's-a');
+    rooms.addPlayerToRoom(roomCode, 'Bob', 's-b');
+    const bob = [...rooms.getRoom(roomCode)!.players.values()].find((p) => p.name === 'Bob')!;
+    rooms.disconnectPlayer(roomCode, bob.id);
+
+    expect(rooms.dropDisconnectedPlayers(roomCode)).toBe(1);
+    const room = rooms.getRoom(roomCode)!;
+    expect(room.players.size).toBe(1);
+    expect([...room.players.values()][0].name).toBe('Alice');
+  });
+
   it('restores seated players from SQLite after a simulated restart', () => {
     const first = new RoomManager();
     const { roomCode } = first.createRoom('Host', 4);
@@ -194,5 +208,136 @@ describe('host token join over socket', () => {
 
     host.disconnect();
     player.disconnect();
+  });
+});
+
+describe('screen lifecycle and post-game restart', () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeEach(async () => {
+    resetDb();
+    server = http.createServer();
+    const { app } = createApp(server, false);
+    server.on('request', app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    port = (server.address() as { port: number }).port;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    closeDb();
+  });
+
+  function connectClient(): Promise<ClientSocket> {
+    const socket = ioc(`http://127.0.0.1:${port}`, {
+      transports: ['websocket'],
+      forceNew: true,
+    });
+    return new Promise((resolve, reject) => {
+      socket.on('connect', () => resolve(socket));
+      socket.on('connect_error', reject);
+    });
+  }
+
+  async function createHostRoom(): Promise<{
+    host: ClientSocket;
+    roomCode: string;
+    hostToken: string;
+  }> {
+    const host = await connectClient();
+    const created = await new Promise<CreateRoomAck>((resolve) => {
+      host.emit(
+        'host:create_room',
+        { hostName: '主持人', targetPlayers: 4, hostPassword: 'host123' },
+        resolve,
+      );
+    });
+    expect(created.success).toBe(true);
+    return { host, roomCode: created.roomCode!, hostToken: created.hostToken! };
+  }
+
+  function nextScreenSync(
+    screen: ClientSocket,
+  ): Promise<{ role: string; phase: string; publicGameState: { playerSeats: { name: string }[]; phase: string } }> {
+    return new Promise((resolve) => {
+      screen.once('state:sync', (snapshot) => resolve(snapshot));
+    });
+  }
+
+  it('joins as screen and keeps receiving snapshots after end_game and restart', async () => {
+    const { host, roomCode } = await createHostRoom();
+
+    const player = await connectClient();
+    await new Promise<RoomJoinAck>((resolve) => {
+      player.emit('room:join', { roomCode, playerName: 'Alice', role: 'player' }, resolve);
+    });
+
+    const screen = await connectClient();
+    const firstPromise = nextScreenSync(screen);
+    const joined = await new Promise<RoomJoinAck>((resolve) => {
+      screen.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
+    });
+    expect(joined.success).toBe(true);
+
+    const first = await firstPromise;
+    expect(first.role).toBe('screen');
+    expect(first.publicGameState.playerSeats.some((p) => p.name === 'Alice')).toBe(true);
+
+    const afterEnd = nextScreenSync(screen);
+    host.emit('host:end_game');
+    const ended = await afterEnd;
+    expect(ended.role).toBe('screen');
+    expect(ended.publicGameState.phase).toBe('GAME_OVER');
+
+    const afterRestart = nextScreenSync(screen);
+    host.emit('host:restart');
+    const restarted = await afterRestart;
+    expect(restarted.role).toBe('screen');
+    expect(restarted.publicGameState.phase).toBe('LOBBY');
+
+    // Refresh-style rejoin after session bump still attaches as screen
+    const rejoined = await new Promise<RoomJoinAck>((resolve) => {
+      screen.emit('room:join', { roomCode, playerName: 'screen', role: 'screen' }, resolve);
+    });
+    expect(rejoined.success).toBe(true);
+
+    host.disconnect();
+    player.disconnect();
+    screen.disconnect();
+  });
+
+  it('drops disconnected seats on restart so new lobby joiners sit instead of queueing', async () => {
+    const { host, roomCode } = await createHostRoom();
+
+    const sockets: ClientSocket[] = [];
+    for (const name of ['Alice', 'Bob', 'Cara', 'Dan']) {
+      const s = await connectClient();
+      sockets.push(s);
+      const ack = await new Promise<RoomJoinAck>((resolve) => {
+        s.emit('room:join', { roomCode, playerName: name, role: 'player' }, resolve);
+      });
+      expect(ack.success).toBe(true);
+      expect(ack.queued).not.toBe(true);
+    }
+
+    for (const s of sockets) s.disconnect();
+
+    await new Promise((r) => setTimeout(r, 50));
+    host.emit('host:end_game');
+    await new Promise((r) => setTimeout(r, 50));
+    host.emit('host:restart');
+    await new Promise((r) => setTimeout(r, 80));
+
+    const eve = await connectClient();
+    const eveJoin = await new Promise<RoomJoinAck>((resolve) => {
+      eve.emit('room:join', { roomCode, playerName: 'Eve', role: 'player' }, resolve);
+    });
+    expect(eveJoin.success).toBe(true);
+    expect(eveJoin.queued).not.toBe(true);
+    expect(eveJoin.seatNumber).toBe(1);
+
+    host.disconnect();
+    eve.disconnect();
   });
 });

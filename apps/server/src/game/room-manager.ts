@@ -443,6 +443,42 @@ export class RoomManager {
   }
 
   /**
+   * Remove disconnected players from a room (and from SQLite).
+   * Used after a game restart: old auth tokens are already invalid, and
+   * leftover offline seats would block new joiners into the waiting queue.
+   */
+  dropDisconnectedPlayers(code: string): number {
+    const room = this.rooms.get(normalizeRoomCode(code));
+    if (!room) return 0;
+
+    let removed = 0;
+    for (const player of [...room.players.values()]) {
+      if (player.isConnected) continue;
+      room.players.delete(player.id);
+      removed += 1;
+      try {
+        playerRepo.deletePlayer(player.id);
+      } catch (err) {
+        logger.error('Failed to delete disconnected player on restart', {
+          error: err instanceof Error ? err.message : err,
+          room: room.code,
+          playerId: player.id,
+        });
+      }
+    }
+
+    if (removed > 0) {
+      logger.info('Dropped disconnected players after restart', {
+        room: room.code,
+        removed,
+        remaining: room.players.size,
+      });
+    }
+
+    return removed;
+  }
+
+  /**
    * Mark a player as disconnected.
    */
   disconnectPlayer(code: string, playerId: string): void {
