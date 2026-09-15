@@ -31,7 +31,7 @@ function formatJoinTime(iso: string): string {
 }
 
 /** Renders a single queue entry row. */
-function QueueRow({ entry }: { entry: QueueEntry }) {
+function QueueRow({ entry, canPromote }: { entry: QueueEntry; canPromote: boolean }) {
   const { promotePlayer, removeFromQueue } = useHostControls();
 
   return (
@@ -63,9 +63,10 @@ function QueueRow({ entry }: { entry: QueueEntry }) {
       {/* Action buttons */}
       <div className="flex shrink-0 gap-1">
         <button
-          onClick={() => promotePlayer(entry.id)}
-          className="rounded bg-emerald-600/80 px-1.5 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-emerald-500"
-          title="提升为正式玩家"
+          onClick={() => canPromote && promotePlayer(entry.id)}
+          disabled={!canPromote}
+          className="rounded bg-emerald-600/80 px-1.5 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+          title={canPromote ? '提升为正式玩家' : '仅大厅可提升入座'}
         >
           提升
         </button>
@@ -85,8 +86,8 @@ function QueuePanelComponent() {
   const phase = useGameStore((s) => s.phase);
   const queueList = useGameStore((s) => s.queueList);
 
-  // Only active during LOBBY and GAME_OVER
-  const isActive = phase === 'LOBBY' || phase === 'GAME_OVER';
+  // Promote into a seat is only allowed in LOBBY (server-enforced).
+  const isActive = phase === 'LOBBY';
 
   return (
     <div
@@ -117,13 +118,13 @@ function QueuePanelComponent() {
       {/* Queue list */}
       {queueList.length === 0 ? (
         <div className="flex h-20 items-center justify-center text-xs text-slate-600">
-          {isActive ? '队列为空' : '队列功能仅在等待和结束时可用'}
+          {isActive ? '队列为空' : '游戏进行中不可提升入座'}
         </div>
       ) : (
         <div className="space-y-1.5">
           <AnimatePresence>
             {queueList.map((entry) => (
-              <QueueRow key={entry.id} entry={entry} />
+              <QueueRow key={entry.id} entry={entry} canPromote={isActive} />
             ))}
           </AnimatePresence>
         </div>

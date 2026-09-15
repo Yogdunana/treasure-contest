@@ -178,3 +178,36 @@ describe('restart persists reset player state', () => {
     expect(room.playerAuthTokens.get(player.id)).toBe(persisted.authToken);
   });
 });
+
+describe('end game persists scores', () => {
+  beforeEach(() => {
+    resetDb();
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it('writes finalScore to SQLite when the host ends the game', () => {
+    const rooms = new RoomManager();
+    rooms.setBroadcastFn(() => {});
+    const { roomCode } = rooms.createRoom('Host', 4);
+    const added = rooms.addPlayerToRoom(roomCode, 'Alice', 'sock-a');
+    expect(added).not.toBeNull();
+
+    const room = rooms.getRoom(roomCode)!;
+    const player = [...room.players.values()][0];
+    player.gems = [makeGem('end-gem')];
+
+    const engine = rooms.getEngine(roomCode)!;
+    engine.endGameNow();
+
+    expect(room.phase).toBe('GAME_OVER');
+    expect(room.finalResults).toHaveLength(1);
+    expect(player.finalScore).toBeGreaterThan(0);
+
+    const persisted = playerRepo.getPlayer(player.id)!;
+    expect(persisted.finalScore).toBe(player.finalScore);
+    expect(persisted.finalRank).toBe(1);
+  });
+});

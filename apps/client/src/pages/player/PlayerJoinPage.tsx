@@ -272,8 +272,16 @@ export default function PlayerJoinPage() {
             return;
           }
           if (ack.error) {
-            setErrorCode(ack.error.code);
-            setErrorMessage(ack.error.message);
+            if (modeRef.current === 'queue') return;
+            const code = ack.error.code;
+            const zh: Record<string, string> = {
+              NAME_TAKEN: '这个名字已被占用，请换一个',
+              ROOM_FULL: '房间已满',
+              QUEUE_FULL: '排队人数已满，请稍后再试',
+              ROOM_NOT_FOUND: '房间不存在',
+            };
+            setErrorCode(code);
+            setErrorMessage(zh[code] ?? ack.error.message);
             setMode('idle');
           }
         },

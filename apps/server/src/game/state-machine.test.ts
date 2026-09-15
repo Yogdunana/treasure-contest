@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Gem, Player, PlayerMission } from '@treasure-contest/shared';
 import { MISSION_REWARDS } from '@treasure-contest/shared';
 import { Room } from './room.js';
-import { calculateFinalScores, revealNumbers } from './state-machine.js';
+import { calculateFinalScores, revealNumbers, submitNumber } from './state-machine.js';
 import { resolveTies } from '@treasure-contest/shared';
 
 function gem(id: string, color: Gem['color'], value: number): Gem {
@@ -170,5 +170,35 @@ describe('revealNumbers timeout auto-submit', () => {
     expect(disconnected.availableNumbers).toEqual([3, 6]);
     expect(alreadyIn.roundSubmission).toBe(7);
     expect(room.revealedNumbers.map((r) => r.number).sort()).toEqual([1, 2, 7]);
+  });
+});
+
+describe('number submission public ready flag', () => {
+  it('marks the player ready so the big screen can count submissions', () => {
+    const room = new Room('RDY', 'Host', 'token', 4);
+    room.phase = 'NUMBER_SELECTION';
+    const p = makePlayer('p1', 'Ava', 1, []);
+    p.isReady = false;
+    room.players.set('p1', p);
+
+    const result = submitNumber(room, 'p1', 3);
+    expect(result.success).toBe(true);
+    expect(p.isReady).toBe(true);
+    expect(room.toPublicState().playerSeats[0]?.isReady).toBe(true);
+  });
+});
+
+describe('paused public state', () => {
+  it('keeps revealed numbers visible while paused during NUMBER_REVEAL', () => {
+    const room = new Room('PSE', 'Host', 'token', 4);
+    room.revealedNumbers = [{ playerId: 'p1', number: 7 }];
+    room.isPaused = true;
+    room.pausedPhase = 'NUMBER_REVEAL';
+    room.phase = 'PAUSED';
+
+    const snap = room.toPublicState();
+    expect(snap.phase).toBe('PAUSED');
+    expect(snap.pausedPhase).toBe('NUMBER_REVEAL');
+    expect(snap.revealedNumbers).toEqual([{ playerId: 'p1', number: 7 }]);
   });
 });

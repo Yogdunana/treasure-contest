@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { getDb } from '../db/connection.js';
-import { getTodayGameCount } from '../db/repositories/history-repo.js';
+import { getTodayGameCount, getMissionStats } from '../db/repositories/history-repo.js';
 import { ALL_MISSIONS } from '@treasure-contest/shared';
 import type { PlayerMission } from '@treasure-contest/shared';
 import { config } from '../config.js';
@@ -105,46 +105,17 @@ function round2(value: number | null | undefined): number {
 }
 
 /**
- * Aggregate mission appearance and completion counts from players' missions_json.
- *
- * Iterates over all player rows, parses the missions_json column, and
- * tallies how many times each mission appeared and was completed.
+ * Aggregate mission appearance and completion from `mission_result` history
+ * events so stats survive host restart (live missions_json is wiped).
  */
 function aggregateMissionStats(): Map<string, { appearedCount: number; completedCount: number }> {
-  const db = getDb();
-
-  const rows = db
-    .prepare(
-      `SELECT missions_json
-         FROM players
-        WHERE missions_json IS NOT NULL
-          AND missions_json != '[]'`,
-    )
-    .all() as Array<{ missions_json: string }>;
-
   const stats = new Map<string, { appearedCount: number; completedCount: number }>();
-
-  for (const row of rows) {
-    let missions: PlayerMission[];
-    try {
-      missions = JSON.parse(row.missions_json) as PlayerMission[];
-    } catch {
-      continue;
-    }
-
-    for (const mission of missions) {
-      if (!mission.missionId) continue;
-      if (!stats.has(mission.missionId)) {
-        stats.set(mission.missionId, { appearedCount: 0, completedCount: 0 });
-      }
-      const entry = stats.get(mission.missionId)!;
-      entry.appearedCount++;
-      if (mission.completed) {
-        entry.completedCount++;
-      }
-    }
+  for (const row of getMissionStats()) {
+    stats.set(row.missionId, {
+      appearedCount: row.totalAssigned,
+      completedCount: row.totalCompleted,
+    });
   }
-
   return stats;
 }
 
@@ -522,14 +493,14 @@ export function createAdminRouter(): Router {
       const rows = db
         .prepare(
           `SELECT
-             p.name                                          AS name,
-             COUNT(*)                                        AS games_played,
-             AVG(p.final_rank)                               AS avg_rank,
-             COALESCE(SUM(p.final_score), 0)                 AS total_score
-           FROM players p
-           JOIN rooms r ON r.code = p.room_code
-          WHERE r.phase = 'GAME_OVER'
-          GROUP BY p.name
+             json_extract(event_data, '$.name') AS name,
+             COUNT(*) AS games_played,
+             AVG(json_extract(event_data, '$.finalRank')) AS avg_rank,
+             COALESCE(SUM(json_extract(event_data, '$.finalScore')), 0) AS total_score
+           FROM game_history
+          WHERE event_type = 'final_result'
+            AND json_extract(event_data, '$.name') IS NOT NULL
+          GROUP BY json_extract(event_data, '$.name')
           ORDER BY games_played DESC, total_score DESC`,
         )
         .all() as Array<{

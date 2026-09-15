@@ -652,28 +652,22 @@ function handleEndGame(
 
   logger.info('host:end_game', { room: room.code, phase: room.phase });
 
-  // Clear all timers for the room
+  const engine = roomManager.getEngine(room.code);
+  if (engine) {
+    engine.endGameNow();
+    return;
+  }
+
   const timerManager = roomManager.getTimerManager(room.code);
   if (timerManager) {
     timerManager.clearAll();
   }
-
-  // Transition to GAME_OVER
   room.phase = 'GAME_OVER';
   room.isPaused = false;
   room.pausedPhase = null;
   room.timerRemaining = 0;
   room.timerDeadline = null;
-
-  // If final results haven't been calculated, do a quick calculation
-  if (room.finalResults.length === 0) {
-    // Set revealedResultsCount to 0 since there are no results
-    room.revealedResultsCount = 0;
-  } else {
-    room.revealedResultsCount = room.finalResults.length;
-  }
-
-  // Update DB
+  room.revealedResultsCount = room.finalResults.length;
   try {
     roomRepo.updateRoom(room.code, {
       phase: 'GAME_OVER',
@@ -685,8 +679,6 @@ function handleEndGame(
   } catch (err) {
     logger.error('Failed to update room phase in DB', { error: err });
   }
-
-  // Broadcast final state
   broadcaster.broadcast(room);
 }
 

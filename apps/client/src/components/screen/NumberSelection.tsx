@@ -24,7 +24,6 @@ import {
 export function NumberSelection() {
   const timer = useGameStore((s) => s.timer);
   const playerSeats = useGameStore((s) => s.playerSeats);
-  const revealedNumbers = useGameStore((s) => s.revealedNumbers);
 
   const totalSeconds = TIMING_CONFIG.NUMBER_SELECTION_SECONDS;
   const remainingSeconds = timer
@@ -34,10 +33,7 @@ export function NumberSelection() {
   // Count how many players have submitted (number is revealed in the store
   // during NUMBER_REVEAL, but during NUMBER_SELECTION we check the
   // revealedNumbers map for non-null entries)
-  const submittedCount = playerSeats.filter((seat) => {
-    const num = revealedNumbers[seat.playerId];
-    return num !== undefined && num !== null;
-  }).length;
+  const submittedCount = playerSeats.filter((seat) => seat.isReady).length;
 
   return (
     <motion.div

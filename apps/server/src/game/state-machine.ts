@@ -142,6 +142,9 @@ export function startNumberSelection(room: Room): void {
   if (validatePhase(room.phase, 'GEM_REVEAL')) {
     room.phase = 'NUMBER_SELECTION';
   }
+  for (const player of room.players.values()) {
+    player.isReady = false;
+  }
 }
 
 /**
@@ -195,6 +198,9 @@ export function submitNumber(
   player.availableNumbers = player.availableNumbers.filter((n) => n !== number);
   player.usedNumbers = [...player.usedNumbers, number];
   player.roundSubmission = number;
+  // Public seats expose isReady as "has submitted this round" so the
+  // big screen can count locks without revealing the chosen number.
+  player.isReady = true;
 
   return { success: true };
 }
@@ -218,6 +224,7 @@ function autoSubmitLowestNumber(player: Player): void {
   player.availableNumbers = player.availableNumbers.filter((n) => n !== lowest);
   player.usedNumbers = [...player.usedNumbers, lowest];
   player.roundSubmission = lowest;
+  player.isReady = true;
 }
 
 /**

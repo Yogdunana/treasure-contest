@@ -40,19 +40,13 @@ export interface PhaseTrackerProps {
 
 function PhaseTrackerComponent({ className }: PhaseTrackerProps) {
   const phase = useGameStore((s) => s.phase);
+  const pausedPhase = useGameStore((s) => s.pausedPhase);
   const currentRound = useGameStore((s) => s.currentRound);
 
-  // PAUSED is a special case — find the "real" phase position
-  const effectivePhase: GamePhase = phase === 'PAUSED' ? 'PAUSED' : phase;
-  const currentIndex = PHASE_ORDER.indexOf(
-    phase === 'PAUSED' ? 'PAUSED' : phase,
-  );
-
-  // For PAUSED, show the last non-paused phase as "in progress"
-  const displayIndex =
-    phase === 'PAUSED'
-      ? PHASE_ORDER.length // treat as "all complete" for visual purposes
-      : currentIndex;
+  const effectivePhase: GamePhase =
+    phase === 'PAUSED' ? (pausedPhase ?? phase) : phase;
+  const currentIndex = PHASE_ORDER.indexOf(effectivePhase);
+  const displayIndex = currentIndex >= 0 ? currentIndex : 0;
 
   return (
     <div

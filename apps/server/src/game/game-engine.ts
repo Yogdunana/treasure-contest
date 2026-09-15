@@ -366,6 +366,7 @@ export class GameEngine {
     }
 
     this.syncToDB();
+    this.persistAllPlayerScores();
     this.broadcast();
 
     // Transition to RESULTS_REVEAL
@@ -460,6 +461,59 @@ export class GameEngine {
     });
   }
 
+  /**
+   * Host ended the game: score immediately if needed and jump to GAME_OVER
+   * without waiting for the reveal ceremony.
+   */
+  endGameNow(): void {
+    this.timerManager.clearAll();
+    if (this.room.finalResults.length === 0) {
+      stateMachine.calculateFinalScores(this.room);
+      this.logEvent('final_calculation', undefined, undefined, undefined, {
+        finalResults: this.room.finalResults.map((r) => ({
+          playerId: r.playerId,
+          name: r.name,
+          finalScore: r.finalScore,
+          finalRank: r.finalRank,
+        })),
+      });
+      for (const result of this.room.finalResults) {
+        this.logEvent('final_result', undefined, undefined, result.playerId, {
+          name: result.name,
+          finalScore: result.finalScore,
+          finalRank: result.finalRank,
+          baseScore: result.baseScore,
+          colorBonus: result.colorBonus,
+          missionBonus: result.missionBonus,
+        });
+        for (const mission of result.missions) {
+          this.logEvent('mission_result', undefined, undefined, result.playerId, {
+            missionId: mission.missionId,
+            difficulty: mission.difficulty,
+            reward: mission.reward,
+            completed: mission.completed,
+          });
+        }
+      }
+      this.persistAllPlayerScores();
+    }
+
+    this.room.phase = 'GAME_OVER';
+    this.room.isPaused = false;
+    this.room.pausedPhase = null;
+    this.room.timerRemaining = 0;
+    this.room.timerDeadline = null;
+    this.room.revealedResultsCount = this.room.finalResults.length;
+    this.logEvent('game_end');
+    this.syncToDB();
+    this.broadcast();
+    logger.info('Game ended by host', {
+      room: this.room.code,
+      players: this.room.players.size,
+      results: this.room.finalResults.length,
+    });
+  }
+
   // ========================================================================
   // Pause / Resume
   // ========================================================================
@@ -516,6 +570,11 @@ export class GameEngine {
         },
         wasPhase,
       );
+      const pickerId = this.room.getCurrentPickerId();
+      const picker = pickerId ? this.room.players.get(pickerId) : null;
+      if (picker && !picker.isConnected) {
+        this.advanceToNextPicker();
+      }
     } else if (paused?.kind === 'delay') {
       const remaining = Math.max(0, paused.remaining);
       const key = paused.key;
@@ -783,6 +842,7 @@ export class GameEngine {
 
     try {
       playerRepo.updatePlayerState(playerId, {
+        isReady: player.isReady,
         availableNumbers: player.availableNumbers,
         usedNumbers: player.usedNumbers,
         roundSubmission: player.roundSubmission,
@@ -826,6 +886,16 @@ export class GameEngine {
       gemRepo.updateGemPick(gemId, pickedBy, pickOrder);
     } catch (err) {
       logger.error('Failed to sync gem pick to DB', { error: err, gemId });
+    }
+  }
+
+  /**
+   * Persist every seated player's score/missions so admin history survives
+   * even if the room is later restarted.
+   */
+  private persistAllPlayerScores(): void {
+    for (const player of this.room.players.values()) {
+      this.syncPlayerState(player.id);
     }
   }
 

@@ -239,7 +239,7 @@ function handlePlayerJoin(
 
     if (decision.action === 'name_taken') {
       const errorCode = 'NAME_TAKEN';
-      const errorMsg = `Name "${playerName}" is already taken`;
+      const errorMsg = `名字「${playerName}」已被占用，请换一个`;
       broadcaster.sendError(socket, errorCode, errorMsg);
       if (ack) ack({ success: false, error: { code: errorCode, message: errorMsg } });
       return;

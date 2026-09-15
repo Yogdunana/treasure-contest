@@ -53,6 +53,8 @@ export interface GameStore {
   targetPlayers: number;
   /** Seated players (queued snapshots do not include playerSeats). */
   seatedCount: number;
+  isPaused: boolean;
+  pausedPhase: GamePhase | null;
 
   // ── Private state (player only) ───────────────────────────────────────
   playerId: string | null;
@@ -106,6 +108,8 @@ const initialState = {
   finalResults: [] as FinalResult[],
   targetPlayers: DEFAULT_TARGET_PLAYERS,
   seatedCount: 0,
+  isPaused: false,
+  pausedPhase: null as GamePhase | null,
 
   // Private
   playerId: null as string | null,
@@ -173,6 +177,8 @@ function extractPublicState(pgs: PublicGameState) {
     finalResults: pgs.finalResults ?? [],
     targetPlayers: pgs.targetPlayers || DEFAULT_TARGET_PLAYERS,
     seatedCount: pgs.playerSeats.length,
+    isPaused: pgs.isPaused,
+    pausedPhase: pgs.pausedPhase,
   };
 }
 

@@ -129,7 +129,7 @@ function SeatCard({
       {/* Submission status during NUMBER_SELECTION */}
       {showSubmissionStatus && phase === 'NUMBER_SELECTION' && (
         <div className="mt-1">
-          {hasRevealed ? (
+          {seat.isReady ? (
             <span className="rounded-full bg-slate-700 px-3 py-0.5 text-xs text-slate-400">
               已提交
             </span>

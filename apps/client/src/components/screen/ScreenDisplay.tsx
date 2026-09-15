@@ -75,9 +75,16 @@ function PhaseTransition({ label }: { label: string }) {
   );
 }
 
+/** Phase the big screen should render; while paused keep the frozen scene. */
+function useEffectivePhase(): GamePhase {
+  const phase = useGameStore((s) => s.phase);
+  const pausedPhase = useGameStore((s) => s.pausedPhase);
+  return phase === 'PAUSED' && pausedPhase ? pausedPhase : phase;
+}
+
 /** Renders the phase-specific content. */
 function PhaseContent() {
-  const phase = useGameStore((s) => s.phase);
+  const phase = useEffectivePhase();
 
   switch (phase) {
     case 'LOBBY':
