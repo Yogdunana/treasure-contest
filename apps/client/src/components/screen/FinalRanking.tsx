@@ -158,7 +158,8 @@ function ResultCard({
 
   return (
     <motion.div
-      variants={emphasize ? championEffect : slideIn}
+      variants={emphasize ? championEffect : compact ? undefined : slideIn}
+      initial={compact ? false : undefined}
       className={clsx(
         'relative flex shrink-0 items-center rounded-2xl border-2',
         compact ? 'gap-3 p-3' : 'gap-4 p-4',
@@ -287,8 +288,8 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
 
   return (
     <motion.div
-      variants={staggerContainer}
-      initial="hidden"
+      variants={compact ? undefined : staggerContainer}
+      initial={compact ? false : 'hidden'}
       animate="visible"
       className={clsx(
         'flex h-full w-full flex-col items-center gap-4',
@@ -310,7 +311,7 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
       )}
 
       <motion.div
-        variants={staggerContainer}
+        variants={compact ? undefined : staggerContainer}
         className={clsx(
           'flex w-full max-w-4xl flex-col',
           compact ? 'gap-2' : 'gap-3',

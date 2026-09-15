@@ -332,7 +332,7 @@ export function ScreenDisplay() {
           <motion.div
             key={effectivePhase}
             variants={fadeIn}
-            initial="hidden"
+            initial={effectivePhase === 'GAME_OVER' ? false : 'hidden'}
             animate="visible"
             exit="exit"
             className="h-full w-full"
