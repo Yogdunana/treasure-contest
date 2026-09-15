@@ -225,7 +225,7 @@ function GameOverQROverlay() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
       transition={{ delay: 1, type: 'spring', stiffness: 100, damping: 14 }}
-      className="absolute bottom-16 right-6 z-20"
+      className="absolute bottom-20 right-6 z-20"
     >
       <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 backdrop-blur-sm">
         <p className="mb-2 text-center text-sm text-slate-400">
@@ -256,20 +256,20 @@ function GameOverQROverlay() {
 function CreditLine() {
   return (
     <p
-      className="credit credit-slot relative z-[60] flex h-11 shrink-0 items-center justify-center gap-2 border-t border-white/5 bg-black/40 px-8 text-sm tracking-wide"
+      className="credit credit-slot relative z-[60] flex h-16 shrink-0 items-center justify-center gap-3 border-t border-white/10 bg-black/50 px-8 text-xl tracking-wide"
       id="creditLine"
     >
-      <span className="credit-org ui-copy text-slate-300" id="creditOrg">
+      <span className="credit-org ui-copy font-medium text-slate-100" id="creditOrg">
         深圳北理莫斯科大学计算机协会 · StarByte
       </span>
-      <span className="credit-role ui-copy text-slate-500" id="creditSupport">
+      <span className="credit-role ui-copy text-slate-400" id="creditSupport">
         制作
       </span>
       <span className="credit-sep text-slate-600">|</span>
-      <span className="credit-league ui-copy text-slate-300" id="creditLeague">
+      <span className="credit-league ui-copy font-medium text-slate-100" id="creditLeague">
         共青团深圳北理莫斯科大学委员会
       </span>
-      <span className="credit-role ui-copy text-slate-500" id="creditPresented">
+      <span className="credit-role ui-copy text-slate-400" id="creditPresented">
         监制
       </span>
     </p>
