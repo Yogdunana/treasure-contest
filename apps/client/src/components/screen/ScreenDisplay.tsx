@@ -8,14 +8,15 @@
  * - Phase-based content area (large center area)
  * - Queue indicator in corner
  * - Paused overlay when game is paused
- * - QR code overlay during LOBBY and GAME_OVER (for continuous recruitment)
+ * - QR code overlay during gameplay and GAME_OVER (lobby has its own large QR)
  *
  * The phase-based content area renders different components based on the
  * current game phase, with smooth AnimatePresence transitions.
  *
  * Note: During LOBBY, the LobbyScreen component renders the QR code as
- * part of its main content.  During GAME_OVER, a floating QR overlay
- * is shown in the corner for next-game recruitment.
+ * part of its main content.  During the match a smaller QR stays in the
+ * corner so spectators can scan and queue; GAME_OVER uses the same overlay
+ * for next-game recruitment.
  */
 
 import { useEffect, useState } from 'react';
@@ -196,8 +197,8 @@ function PhaseBadge() {
   );
 }
 
-/** Floating QR code overlay for GAME_OVER next-game recruitment. */
-function GameOverQROverlay() {
+/** Corner QR so spectators can queue during the match, or join the next game. */
+function JoinQROverlay({ forNextGame }: { forNextGame: boolean }) {
   const roomCode = useSocketStore((s) => s.roomCode);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
@@ -224,27 +225,27 @@ function GameOverQROverlay() {
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
-      transition={{ delay: 1, type: 'spring', stiffness: 100, damping: 14 }}
-      className="absolute bottom-20 right-6 z-20"
+      transition={{ delay: 0.4, type: 'spring', stiffness: 100, damping: 14 }}
+      className="absolute bottom-24 left-6 z-20"
     >
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 backdrop-blur-sm">
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-3.5 backdrop-blur-sm">
         <p className="mb-2 text-center text-sm text-slate-400">
-          扫码加入下一局
+          {forNextGame ? '扫码加入下一局' : '扫码排队'}
         </p>
         <div className="flex items-center justify-center">
           {qrDataUrl ? (
             <img
               src={qrDataUrl}
               alt="扫码加入房间"
-              className="h-32 w-32 rounded-lg bg-slate-50 p-1"
+              className="h-28 w-28 rounded-lg bg-slate-50 p-1"
             />
           ) : (
-            <div className="flex h-32 w-32 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-500">
+            <div className="flex h-28 w-28 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-500">
               生成中...
             </div>
           )}
         </div>
-        <p className="mt-2 text-center font-mono text-lg font-bold text-violet-300">
+        <p className="mt-2 text-center font-mono text-base font-bold text-violet-300">
           {roomCode ?? '------'}
         </p>
       </div>
@@ -256,20 +257,20 @@ function GameOverQROverlay() {
 function CreditLine() {
   return (
     <p
-      className="credit credit-slot relative z-[60] flex h-16 shrink-0 items-center justify-center gap-3 border-t border-white/10 bg-black/50 px-8 text-xl tracking-wide"
+      className="credit credit-slot relative z-[60] flex h-20 shrink-0 items-center justify-center gap-3 border-t border-white/10 bg-black/50 px-8 text-2xl tracking-wide"
       id="creditLine"
     >
       <span className="credit-org ui-copy font-medium text-slate-100" id="creditOrg">
         深圳北理莫斯科大学计算机协会 · StarByte
       </span>
-      <span className="credit-role ui-copy text-slate-400" id="creditSupport">
+      <span className="credit-role ui-copy text-xl text-slate-400" id="creditSupport">
         制作
       </span>
-      <span className="credit-sep text-slate-600">|</span>
+      <span className="credit-sep text-slate-500">|</span>
       <span className="credit-league ui-copy font-medium text-slate-100" id="creditLeague">
         共青团深圳北理莫斯科大学委员会
       </span>
-      <span className="credit-role ui-copy text-slate-400" id="creditPresented">
+      <span className="credit-role ui-copy text-xl text-slate-400" id="creditPresented">
         监制
       </span>
     </p>
@@ -280,9 +281,9 @@ export function ScreenDisplay() {
   const phase = useGameStore((s) => s.phase);
   const isPaused = phase === 'PAUSED';
 
-  // Show floating QR overlay during GAME_OVER for next-game recruitment.
-  // During LOBBY, the QR is shown as part of the LobbyScreen content.
-  const showGameOverQR = phase === 'GAME_OVER';
+  // Lobby already has a large QR. During the match (and GAME_OVER) keep a
+  // smaller overlay so people can scan and queue without interrupting play.
+  const showJoinQR = phase !== 'LOBBY';
 
   return (
     <div
@@ -364,9 +365,8 @@ export function ScreenDisplay() {
       {/* Paused overlay */}
       <AnimatePresence>{isPaused && <PausedOverlay />}</AnimatePresence>
 
-      {/* Floating QR overlay during GAME_OVER for next-game recruitment */}
       <AnimatePresence>
-        {showGameOverQR && <GameOverQROverlay />}
+        {showJoinQR && <JoinQROverlay forNextGame={phase === 'GAME_OVER'} />}
       </AnimatePresence>
     </div>
   );

@@ -292,8 +292,8 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
       initial={compact ? false : 'hidden'}
       animate="visible"
       className={clsx(
-        'flex h-full w-full flex-col items-center gap-4',
-        compact ? 'justify-start overflow-y-auto py-2' : 'justify-center',
+        'flex w-full flex-col items-center gap-4',
+        compact ? 'justify-center py-1' : 'h-full justify-center',
       )}
     >
       {!compact && (
