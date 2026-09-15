@@ -257,6 +257,7 @@ export class Room {
       timer,
       queueCount: this.queue.length,
       finalResults,
+      targetPlayers: this.targetPlayers,
     };
   }
 

@@ -73,7 +73,7 @@ function GameControlsComponent({ className }: GameControlsProps) {
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
 
-  const playerCount = playerSeats.length;
+  const playerCount = playerSeats.filter((p) => p.isConnected).length;
   const canStart = phase === 'LOBBY' && playerCount >= MIN_PLAYERS;
   const isPaused = phase === 'PAUSED';
   const isActive = ACTIVE_PHASES.includes(phase) || isPaused;

@@ -12,6 +12,7 @@
  */
 
 import { create } from 'zustand';
+import { DEFAULT_TARGET_PLAYERS } from '@treasure-contest/shared';
 import type {
   ClientRole,
   GamePhase,
@@ -48,6 +49,10 @@ export interface GameStore {
   timer: TimerInfo | null;
   queueCount: number;
   finalResults: FinalResult[];
+  /** Host-configured seat target for this room (not the default 6). */
+  targetPlayers: number;
+  /** Seated players (queued snapshots do not include playerSeats). */
+  seatedCount: number;
 
   // ── Private state (player only) ───────────────────────────────────────
   playerId: string | null;
@@ -99,6 +104,8 @@ const initialState = {
   timer: null as TimerInfo | null,
   queueCount: 0,
   finalResults: [] as FinalResult[],
+  targetPlayers: DEFAULT_TARGET_PLAYERS,
+  seatedCount: 0,
 
   // Private
   playerId: null as string | null,
@@ -164,6 +171,8 @@ function extractPublicState(pgs: PublicGameState) {
     timer: pgs.timer,
     queueCount: pgs.queueCount,
     finalResults: pgs.finalResults ?? [],
+    targetPlayers: pgs.targetPlayers || DEFAULT_TARGET_PLAYERS,
+    seatedCount: pgs.playerSeats.length,
   };
 }
 
@@ -231,7 +240,9 @@ export const useGameStore = create<GameStore>((set) => ({
           phase: qs.currentPhase,
           queuePosition: qs.position,
           totalInQueue: qs.totalInQueue,
-          queueCount: qs.playerCount,
+          queueCount: qs.totalInQueue,
+          targetPlayers: qs.targetPlayers || DEFAULT_TARGET_PLAYERS,
+          seatedCount: qs.playerCount,
           currentRound: 0,
         });
         break;

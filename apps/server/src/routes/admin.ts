@@ -32,6 +32,7 @@ interface GamePlayerResult {
   seatNumber: number;
   finalScore: number;
   finalRank: number | null;
+  missions: PlayerMission[];
 }
 
 /** A game session record returned by GET /api/admin/games */
@@ -44,6 +45,10 @@ interface GameRecord {
   targetPlayers: number;
   createdAt: string;
   updatedAt: string;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  playerCount: number;
   players: GamePlayerResult[];
 }
 
@@ -69,6 +74,15 @@ interface PlayerStat {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Convert SQLite `datetime('now')` UTC text into an ISO-8601 string.
+ */
+function sqliteUtcToIso(value: string): string {
+  if (!value) return '';
+  if (value.includes('T')) return value.endsWith('Z') ? value : `${value}Z`;
+  return `${value.replace(' ', 'T')}Z`;
+}
 
 /**
  * Escape a value for inclusion in a CSV field.
@@ -302,7 +316,7 @@ export function createAdminRouter(): Router {
         .prepare(
           `SELECT COUNT(DISTINCT name) AS cnt
              FROM players
-            WHERE DATE(created_at) = DATE('now')`,
+            WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
         )
         .get() as { cnt: number };
 
@@ -317,7 +331,7 @@ export function createAdminRouter(): Router {
                       ) * 86400 AS duration
                  FROM game_history
                 WHERE event_type IN ('game_start', 'game_end')
-                  AND DATE(created_at) = DATE('now')
+                  AND DATE(created_at, 'localtime') = DATE('now', 'localtime')
                 GROUP BY room_code
              )
             WHERE duration IS NOT NULL`,
@@ -332,7 +346,7 @@ export function createAdminRouter(): Router {
                SELECT r.code, COUNT(p.id) AS player_count
                  FROM rooms r
                  JOIN players p ON p.room_code = r.code
-                WHERE DATE(r.created_at) = DATE('now')
+                WHERE DATE(r.created_at, 'localtime') = DATE('now', 'localtime')
                 GROUP BY r.code
              )`,
         )
@@ -363,7 +377,7 @@ export function createAdminRouter(): Router {
           `SELECT code, game_session, host_name, phase, current_round,
                   target_players, created_at, updated_at
              FROM rooms
-            WHERE DATE(created_at) = DATE('now')
+            WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')
             ORDER BY created_at DESC`,
         )
         .all() as Array<{
@@ -387,13 +401,14 @@ export function createAdminRouter(): Router {
         seat_number: number;
         final_score: number;
         final_rank: number | null;
+        missions_json: string;
       }> = [];
 
       if (roomCodes.length > 0) {
         const placeholders = roomCodes.map(() => '?').join(',');
         playerRows = db
           .prepare(
-            `SELECT id, room_code, name, seat_number, final_score, final_rank
+            `SELECT id, room_code, name, seat_number, final_score, final_rank, missions_json
                FROM players
               WHERE room_code IN (${placeholders})
               ORDER BY room_code, final_rank ASC`,
@@ -407,27 +422,50 @@ export function createAdminRouter(): Router {
         if (!playersByRoom.has(p.room_code)) {
           playersByRoom.set(p.room_code, []);
         }
+        let missions: PlayerMission[] = [];
+        try {
+          const parsed = JSON.parse(p.missions_json || '[]') as PlayerMission[];
+          if (Array.isArray(parsed)) missions = parsed;
+        } catch {
+          missions = [];
+        }
         playersByRoom.get(p.room_code)!.push({
           id: p.id,
           name: p.name,
           seatNumber: p.seat_number,
           finalScore: p.final_score,
           finalRank: p.final_rank,
+          missions,
         });
       }
 
       // Assemble game records
-      const games: GameRecord[] = rooms.map((r) => ({
-        roomCode: r.code,
-        gameSession: r.game_session,
-        hostName: r.host_name,
-        phase: r.phase,
-        currentRound: r.current_round,
-        targetPlayers: r.target_players,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        players: playersByRoom.get(r.code) ?? [],
-      }));
+      const games: GameRecord[] = rooms.map((r) => {
+        const players = playersByRoom.get(r.code) ?? [];
+        const startIso = sqliteUtcToIso(r.created_at);
+        const endIso = sqliteUtcToIso(r.updated_at);
+        const startMs = Date.parse(startIso);
+        const endMs = Date.parse(endIso);
+        const duration =
+          Number.isFinite(startMs) && Number.isFinite(endMs)
+            ? Math.max(0, Math.round((endMs - startMs) / 1000))
+            : 0;
+        return {
+          roomCode: r.code,
+          gameSession: r.game_session,
+          hostName: r.host_name,
+          phase: r.phase,
+          currentRound: r.current_round,
+          targetPlayers: r.target_players,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          startTime: startIso,
+          endTime: endIso,
+          duration,
+          playerCount: players.length,
+          players,
+        };
+      });
 
       res.json(games);
     } catch (err) {

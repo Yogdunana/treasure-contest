@@ -113,7 +113,7 @@ export function getTodayGameCount(): number {
       `SELECT COUNT(*) AS cnt
        FROM game_history
        WHERE event_type = 'game_end'
-         AND DATE(created_at) = DATE('now')`,
+         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
   return row.cnt;
@@ -137,7 +137,7 @@ export function getTodayStats(): TodayStats {
       `SELECT COUNT(*) AS cnt
        FROM game_history
        WHERE event_type = 'game_end'
-         AND DATE(created_at) = DATE('now')`,
+         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 
@@ -146,7 +146,7 @@ export function getTodayStats(): TodayStats {
       `SELECT COUNT(DISTINCT player_id) AS cnt
        FROM game_history
        WHERE player_id IS NOT NULL
-         AND DATE(created_at) = DATE('now')`,
+         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 
@@ -154,7 +154,7 @@ export function getTodayStats(): TodayStats {
     .prepare(
       `SELECT COUNT(*) AS cnt
        FROM game_history
-       WHERE DATE(created_at) = DATE('now')`,
+       WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 

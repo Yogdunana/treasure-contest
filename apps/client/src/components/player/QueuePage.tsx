@@ -15,10 +15,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../store/game-store';
 import { useQueue } from '../../hooks/useQueue';
-import {
-  DEFAULT_TARGET_PLAYERS,
-  type GamePhase,
-} from '@treasure-contest/shared';
+import { type GamePhase } from '@treasure-contest/shared';
 import { fadeIn, scaleIn, slideUp, staggerContainer } from '../../animations/variants';
 
 /** Human-readable Chinese label for a game phase. */
@@ -50,7 +47,8 @@ export function QueuePage({ roomCode: propRoomCode, playerName }: QueuePageProps
 
   const queuePosition = useGameStore((s) => s.queuePosition);
   const totalInQueue = useGameStore((s) => s.totalInQueue);
-  const queueCount = useGameStore((s) => s.queueCount);
+  const seatedCount = useGameStore((s) => s.seatedCount);
+  const targetPlayers = useGameStore((s) => s.targetPlayers);
   const phase = useGameStore((s) => s.phase);
   const snapshotRole = useGameStore((s) => s.snapshotRole);
   const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
@@ -133,7 +131,7 @@ export function QueuePage({ roomCode: propRoomCode, playerName }: QueuePageProps
         <div className="mt-2 flex items-center justify-between">
           <span className="text-xs text-slate-500">在场玩家</span>
           <span className="text-sm text-slate-300">
-            {queueCount} / {DEFAULT_TARGET_PLAYERS}
+            {seatedCount} / {targetPlayers}
           </span>
         </div>
         {totalInQueue && (

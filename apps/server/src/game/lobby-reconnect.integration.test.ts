@@ -336,6 +336,7 @@ describe('screen lifecycle and post-game restart', () => {
     });
     expect(joined.success).toBe(true);
     expect(joined.snapshot?.role).toBe('screen');
+    expect(joined.snapshot?.publicGameState.targetPlayers).toBe(4);
     expect(joined.snapshot?.publicGameState.playerSeats.some((p) => p.name === 'Alice')).toBe(true);
     expect(joined.snapshot?.publicGameState.phase).toBe('LOBBY');
 

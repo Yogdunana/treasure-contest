@@ -132,6 +132,7 @@ describe('RESULTS_REVEAL order', () => {
     ];
 
     const snapshot = room.toPublicState();
+    expect(snapshot.targetPlayers).toBe(4);
     expect(snapshot.finalResults).toHaveLength(1);
     expect(snapshot.finalResults?.[0]?.playerId).toBe('loser');
   });
