@@ -533,7 +533,7 @@ export function createAdminRouter(): Router {
       // -- Section 1: Game records --
       lines.push('=== Game Records ===');
       lines.push(
-        'Room Code,Game Session,Host Name,Phase,Current Round,Target Players,Created At,Updated At',
+        'Room Code,Game Session,Host Name,Phase,Current Round,Target Players,Start Time,End Time',
       );
 
       const rooms = db
@@ -563,8 +563,8 @@ export function createAdminRouter(): Router {
             csvEscape(r.phase),
             csvEscape(r.current_round),
             csvEscape(r.target_players),
-            csvEscape(r.created_at),
-            csvEscape(r.updated_at),
+            csvEscape(sqliteUtcToIso(r.created_at)),
+            csvEscape(sqliteUtcToIso(r.updated_at)),
           ].join(','),
         );
       }

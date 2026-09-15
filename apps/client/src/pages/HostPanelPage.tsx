@@ -239,7 +239,7 @@ export default function HostPanelPage() {
                 {connectedPlayers}
               </span>
               <span className="text-[10px] text-slate-600">
-                /{targetPlayers}
+                / {targetPlayers}
               </span>
             </div>
             <div className="flex items-center gap-1">

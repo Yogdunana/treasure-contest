@@ -544,8 +544,10 @@ export default function AdminDashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (authed) {
+      fetchData();
+    }
+  }, [authed, fetchData]);
 
   // ── CSV export ─────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {

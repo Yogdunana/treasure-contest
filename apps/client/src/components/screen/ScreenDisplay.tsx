@@ -254,6 +254,7 @@ function GameOverQROverlay() {
 
 export function ScreenDisplay() {
   const phase = useGameStore((s) => s.phase);
+  const effectivePhase = useEffectivePhase();
   const isPaused = phase === 'PAUSED';
 
   // Show floating QR overlay during GAME_OVER for next-game recruitment.
@@ -326,10 +327,10 @@ export function ScreenDisplay() {
       </header>
 
       {/* Main content area */}
-      <main className="relative z-10 flex h-[calc(100vh-72px)] items-center justify-center px-8">
+      <main className="relative z-10 h-[calc(100vh-72px)] overflow-hidden px-8">
         <AnimatePresence mode="wait">
           <motion.div
-            key={phase}
+            key={effectivePhase}
             variants={fadeIn}
             initial="hidden"
             animate="visible"

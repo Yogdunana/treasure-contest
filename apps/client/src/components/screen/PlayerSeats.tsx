@@ -38,6 +38,8 @@ export interface PlayerSeatsProps {
   showSubmissionStatus?: boolean;
   /** Whether to highlight the current picker during GEM_SELECTION. */
   highlightPicker?: boolean;
+  /** Circle radius in px (circle layout only). */
+  radius?: number;
   /** Additional CSS class names. */
   className?: string;
 }
@@ -50,6 +52,7 @@ function SeatCard({
   layout,
   showSubmissionStatus,
   highlightPicker,
+  radius,
 }: {
   seat: PlayerSeat;
   index: number;
@@ -57,6 +60,7 @@ function SeatCard({
   layout: 'circle' | 'grid';
   showSubmissionStatus?: boolean;
   highlightPicker?: boolean;
+  radius: number;
 }) {
   const currentPickerId = useGameStore((s) => s.currentPickerId);
   const phase = useGameStore((s) => s.phase);
@@ -81,7 +85,6 @@ function SeatCard({
 
   // Circular position calculation
   const angle = total > 0 ? (index / total) * 2 * Math.PI - Math.PI / 2 : 0;
-  const radius = 280; // px from center
   const circleX = Math.cos(angle) * radius;
   const circleY = Math.sin(angle) * radius;
 
@@ -214,6 +217,7 @@ function PlayerSeatsComponent({
   layout = 'circle',
   showSubmissionStatus = false,
   highlightPicker = false,
+  radius = 280,
   className,
 }: PlayerSeatsProps) {
   const playerSeats = useGameStore((s) => s.playerSeats);
@@ -240,7 +244,7 @@ function PlayerSeatsComponent({
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
-        className={clsx('relative h-[640px] w-full', className)}
+        className={clsx('relative w-full', className ?? 'h-[640px]')}
       >
         {sorted.map((seat, i) => (
           <SeatCard
@@ -251,6 +255,7 @@ function PlayerSeatsComponent({
             layout="circle"
             showSubmissionStatus={showSubmissionStatus}
             highlightPicker={highlightPicker}
+            radius={radius}
           />
         ))}
       </motion.div>
@@ -282,6 +287,7 @@ function PlayerSeatsComponent({
           layout="grid"
           showSubmissionStatus={showSubmissionStatus}
           highlightPicker={highlightPicker}
+          radius={radius}
         />
       ))}
     </motion.div>
