@@ -818,15 +818,18 @@ export default function AdminDashboardPage() {
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">时间 </span>
-                            {formatTime(game.startTime)} - {formatTime(game.endTime)}
+                            {game.phase === 'GAME_OVER'
+                              ? `${formatTime(game.startTime)} - ${formatTime(game.endTime)}`
+                              : `${formatTime(game.startTime)} 起`}
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">时长 </span>
-                            {formatDuration(game.duration)}
+                            {game.phase === 'GAME_OVER' ? formatDuration(game.duration) : '进行中'}
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">人数 </span>
                             {game.playerCount}
+                            {game.targetPlayers ? `/${game.targetPlayers}` : ''}
                           </span>
                         </div>
                       </div>
