@@ -1032,6 +1032,7 @@ function handleReconnectByName(
  * Lobby / GAME_OVER: the seat is removed so someone else can join.
  * Mid-game: treated as a disconnect so numbers, gems and missions survive
  * for reconnect. Queue promotion only runs in LOBBY.
+ */
 function handleRoomLeave(
   io: AppServer,
   socket: AppSocket,
