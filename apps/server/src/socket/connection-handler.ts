@@ -716,7 +716,7 @@ function handleReconnectByCookie(
       code: 'PLAYER_NOT_FOUND' as const,
       message: 'No player cookie found. Please rejoin the room.',
     };
-    broadcaster.sendError(socket, error.code, error.message);
+    // Expected miss for first-time joiners — ack only, do not toast an error.
     if (ack) ack({ success: false, error });
     return;
   }
@@ -878,7 +878,6 @@ function handleReconnectByFingerprint(
       code: 'PLAYER_NOT_FOUND' as const,
       message: 'No player found matching this fingerprint',
     };
-    broadcaster.sendError(socket, error.code, error.message);
     if (ack) ack({ success: false, error });
     return;
   }

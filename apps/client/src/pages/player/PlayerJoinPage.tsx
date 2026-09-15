@@ -88,21 +88,25 @@ export default function PlayerJoinPage() {
     };
 
     const errorHandler = (payload: ErrorPayload) => {
-      setErrorCode(payload.code);
-      setErrorMessage(payload.message);
-
       if (payload.code === ErrorCodes.SESSION_EXPIRED) {
         clearAuthLocal(roomCode);
         setSessionExpired(true);
+        setErrorCode(payload.code);
+        setErrorMessage(payload.message);
         setMode('idle');
       } else if (
         payload.code === ErrorCodes.PLAYER_NOT_FOUND ||
         payload.code === ErrorCodes.ROOM_NOT_FOUND
       ) {
         if (modeRef.current === 'reconnecting') {
-          // Layer 1/2/3 failures are handled by the reconnect ack chain.
+          // Expected miss while probing cookie/token — do not flash English
+          // "No player cookie found" on the join form.
+          setErrorCode(null);
+          setErrorMessage(null);
           return;
         }
+        setErrorCode(payload.code);
+        setErrorMessage(payload.message);
         clearAuthLocal(roomCode);
         setMode('idle');
       } else if (payload.code === ErrorCodes.ROOM_FULL) {
@@ -124,6 +128,8 @@ export default function PlayerJoinPage() {
           setMode('idle');
         }
       } else {
+        setErrorCode(payload.code);
+        setErrorMessage(payload.message);
         setMode('idle');
       }
     };
@@ -157,21 +163,19 @@ export default function PlayerJoinPage() {
       return false;
     };
 
-    const tryFingerprint = () => {
-      socket.emit(
-        'room:reconnect_by_fingerprint',
-        { roomCode, fingerprint: generateFingerprint() },
-        (ack: RoomJoinAck) => {
-          if (applyJoinAck(ack)) return;
-          setMode('idle');
-        },
-      );
+    // Join form is for a *new* name. Auto fingerprint reconnect would steal
+    // a still-connected seat from another tab on the same device (same canvas
+    // fingerprint). Token + cookie cover refresh; same-name join covers lobby reclaim.
+    const finishReconnectMiss = () => {
+      setErrorCode(null);
+      setErrorMessage(null);
+      setMode('idle');
     };
 
-    const tryCookieThenFingerprint = () => {
+    const tryCookieReconnect = () => {
       socket.emit('room:reconnect_by_cookie', { roomCode }, (ack: RoomJoinAck) => {
         if (applyJoinAck(ack)) return;
-        tryFingerprint();
+        finishReconnectMiss();
       });
     };
 
@@ -197,11 +201,11 @@ export default function PlayerJoinPage() {
               return;
             }
             clearAuthLocal(roomCode);
-            tryCookieThenFingerprint();
+            tryCookieReconnect();
           },
         );
       } else {
-        tryCookieThenFingerprint();
+        tryCookieReconnect();
       }
     };
 
