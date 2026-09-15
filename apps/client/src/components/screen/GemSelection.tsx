@@ -59,6 +59,9 @@ export function GemSelection() {
 
   const remainingGems = gems.filter((g) => g.pickedBy === undefined);
   const pickedGems = gems.filter((g) => g.pickedBy !== undefined);
+  const orderCount = selectionOrder.length;
+  const crowded = orderCount >= 7;
+  const gemSize = remainingGems.length >= 4 ? 118 : remainingGems.length === 3 ? 128 : 132;
 
   const currentPickerIndex = currentPickerId
     ? selectionOrder.indexOf(currentPickerId)
@@ -170,7 +173,7 @@ export function GemSelection() {
                     ease: 'easeInOut',
                   }}
                 >
-                  <GemIcon color={gem.color} size={132} value={gem.value} />
+                  <GemIcon color={gem.color} size={gemSize} value={gem.value} />
                 </motion.div>
                 <div className="text-center">
                   <p className="text-xl font-semibold text-slate-200">
@@ -196,7 +199,10 @@ export function GemSelection() {
       {/* Pick-order timeline */}
       <motion.div
         variants={fadeIn}
-        className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-3 px-40 pb-5 pt-2"
+        className={clsx(
+          'flex shrink-0 flex-wrap items-center justify-center pb-3 pt-2',
+          crowded ? 'gap-x-2 gap-y-2 px-2' : 'gap-x-3 gap-y-3 px-4',
+        )}
       >
         {selectionOrder.map((playerId, index) => {
           const seat = seatMap.get(playerId);
@@ -207,11 +213,11 @@ export function GemSelection() {
           const isCompleted = taken.length > 0 || index < currentPickerIndex;
 
           return (
-            <div key={playerId} className="flex items-center gap-3">
-              {index > 0 && (
+            <div key={playerId} className="flex items-center gap-2">
+              {index > 0 && !crowded && (
                 <span
                   className={clsx(
-                    'hidden text-lg sm:inline',
+                    'text-lg',
                     isCompleted || isCurrent ? 'text-amber-500/50' : 'text-slate-700',
                   )}
                 >
@@ -221,7 +227,8 @@ export function GemSelection() {
               <motion.div
                 layout
                 className={clsx(
-                  'flex min-w-[9.5rem] items-center gap-2.5 rounded-xl border px-3 py-2.5',
+                  'flex items-center rounded-xl border',
+                  crowded ? 'gap-1.5 px-2 py-1.5' : 'min-w-[9.5rem] gap-2.5 px-3 py-2.5',
                   isCurrent
                     ? 'border-amber-400 bg-amber-950/40 shadow-[0_0_18px_rgba(251,191,36,0.35)]'
                     : isCompleted
@@ -231,7 +238,8 @@ export function GemSelection() {
               >
                 <span
                   className={clsx(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                    'flex shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                    crowded ? 'h-5 w-5' : 'h-6 w-6',
                     isCurrent
                       ? 'bg-amber-400 text-amber-950'
                       : isCompleted
@@ -243,17 +251,19 @@ export function GemSelection() {
                 </span>
                 <span
                   className={clsx(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white',
+                    'flex shrink-0 items-center justify-center rounded-full font-bold text-white',
+                    crowded ? 'h-7 w-7 text-xs' : 'h-8 w-8 text-sm',
                     SEAT_BG[(seat.seatNumber - 1) % SEAT_BG.length],
                     isCompleted && !isCurrent && 'opacity-70',
                   )}
                 >
                   {seat.seatNumber}
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0">
                   <p
                     className={clsx(
-                      'max-w-[7rem] truncate text-sm font-semibold',
+                      'truncate font-semibold',
+                      crowded ? 'max-w-[4.5rem] text-xs' : 'max-w-[7rem] text-sm',
                       isCurrent ? 'text-amber-100' : 'text-slate-200',
                     )}
                   >
@@ -273,7 +283,7 @@ export function GemSelection() {
                         animate={{ scale: 1, opacity: 1 }}
                         transition={{ type: 'spring', stiffness: 220, damping: 16 }}
                       >
-                        <GemIcon color={gem.color} size={28} value={gem.value} />
+                        <GemIcon color={gem.color} size={crowded ? 22 : 28} value={gem.value} />
                       </motion.div>
                     ))}
                   </div>

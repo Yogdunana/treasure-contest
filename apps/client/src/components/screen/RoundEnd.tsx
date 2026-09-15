@@ -76,18 +76,22 @@ export function RoundEnd() {
 
   // Unpicked gems
   const unpickedGems = gems.filter((g) => g.pickedBy === undefined);
+  const dense = playerSeats.length >= 7;
 
   return (
     <motion.div
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
-      className="flex h-full w-full flex-col items-center justify-center gap-6"
+      className={clsx(
+        'flex h-full w-full flex-col items-center justify-center',
+        dense ? 'gap-3' : 'gap-6',
+      )}
     >
       {/* Title */}
       <motion.div variants={fadeIn} className="text-center">
         <h2
-          className="text-5xl font-bold text-violet-300"
+          className={clsx('font-bold text-violet-300', dense ? 'text-4xl' : 'text-5xl')}
           style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
         >
           第 {currentRound} 轮结束
@@ -100,7 +104,10 @@ export function RoundEnd() {
       {/* Scoreboard */}
       <motion.div
         variants={staggerContainer}
-        className="flex w-full max-w-4xl flex-col gap-3"
+        className={clsx(
+          'flex w-full max-w-4xl flex-col',
+          dense ? 'gap-1.5' : 'gap-3',
+        )}
       >
         {sorted.map((player, index) => (
           <motion.div
@@ -108,7 +115,8 @@ export function RoundEnd() {
             variants={slideIn}
             layout
             className={clsx(
-              'flex items-center gap-4 rounded-2xl border-2 p-4',
+              'flex items-center rounded-2xl border-2',
+              dense ? 'gap-3 p-2.5' : 'gap-4 p-4',
               index === 0
                 ? 'border-amber-400/60 bg-amber-950/20'
                 : 'border-slate-700 bg-slate-800/50',
@@ -167,7 +175,10 @@ export function RoundEnd() {
             <div className="text-right">
               <motion.p
                 key={player.baseScore}
-                className="text-4xl font-bold text-amber-400"
+                className={clsx(
+                  'font-bold text-amber-400',
+                  dense ? 'text-3xl' : 'text-4xl',
+                )}
                 initial={{ scale: 1.3 }}
                 animate={{ scale: 1 }}
                 transition={{ type: 'spring', stiffness: 200, damping: 14 }}

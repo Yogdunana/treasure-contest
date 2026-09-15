@@ -93,7 +93,8 @@ function SeatCard({
       variants={slideIn}
       layout
       className={clsx(
-        'flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition-all duration-300',
+        'flex flex-col items-center rounded-2xl border-2 transition-all duration-300',
+        total >= 7 ? 'gap-1 p-2.5' : 'gap-2 p-4',
         isCurrentPicker
           ? 'border-amber-400 bg-amber-950/40 shadow-[0_0_30px_rgba(251,191,36,0.5)]'
           : !seat.isConnected
@@ -105,7 +106,8 @@ function SeatCard({
       {/* Seat number badge */}
       <div
         className={clsx(
-          'flex h-14 w-14 items-center justify-center rounded-full text-2xl font-bold text-white shadow-lg',
+          'flex items-center justify-center rounded-full font-bold text-white shadow-lg',
+          total >= 7 ? 'h-11 w-11 text-xl' : 'h-14 w-14 text-2xl',
           seatBg,
           !seat.isConnected && 'opacity-50',
         )}
@@ -114,7 +116,10 @@ function SeatCard({
       </div>
 
       {/* Player name */}
-      <p className="max-w-[140px] truncate text-lg font-semibold text-slate-100">
+      <p className={clsx(
+        'truncate font-semibold text-slate-100',
+        total >= 7 ? 'max-w-[110px] text-base' : 'max-w-[140px] text-lg',
+      )}>
         {seat.name}
       </p>
 
