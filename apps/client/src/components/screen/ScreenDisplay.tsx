@@ -328,18 +328,9 @@ export function ScreenDisplay() {
 
       {/* Main content area */}
       <main className="relative z-10 h-[calc(100vh-72px)] overflow-hidden px-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={effectivePhase}
-            variants={fadeIn}
-            initial={effectivePhase === 'GAME_OVER' ? false : 'hidden'}
-            animate="visible"
-            exit="exit"
-            className="h-full w-full"
-          >
-            <PhaseContent />
-          </motion.div>
-        </AnimatePresence>
+        <div className="h-full w-full">
+          <PhaseContent />
+        </div>
       </main>
 
       {/* Queue indicator (top-right corner) */}

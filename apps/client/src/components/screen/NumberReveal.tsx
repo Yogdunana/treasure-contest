@@ -21,8 +21,6 @@ import {
 } from '@treasure-contest/shared';
 import {
   numberFlip,
-  staggerContainer,
-  fadeIn,
   scaleIn,
 } from '../../animations/variants';
 
@@ -74,14 +72,8 @@ export function NumberReveal() {
   });
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      className="flex h-full w-full flex-col items-center justify-center gap-8"
-    >
-      {/* Title */}
-      <motion.div variants={fadeIn} className="text-center">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-8">
+      <div className="text-center">
         <h2
           className="text-5xl font-bold text-violet-300"
           style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
@@ -91,13 +83,9 @@ export function NumberReveal() {
         <p className="mt-2 text-2xl text-slate-400">
           看看每位玩家选择了什么数字
         </p>
-      </motion.div>
+      </div>
 
-      {/* Number cards grid */}
-      <motion.div
-        variants={staggerContainer}
-        className="flex flex-wrap items-center justify-center gap-6"
-      >
+      <div className="flex flex-wrap items-center justify-center gap-6">
         {sorted.map((seat: PlayerSeat) => {
           const number = revealedNumbers[seat.playerId];
           const collisionInfo = playerCollisionMap.get(seat.playerId);
@@ -126,6 +114,8 @@ export function NumberReveal() {
             <motion.div
               key={seat.playerId}
               variants={numberFlip}
+              initial="hidden"
+              animate="visible"
               className={clsx(
                 'flex flex-col items-center gap-3 rounded-2xl border-2 p-5',
                 borderClass,
@@ -179,6 +169,8 @@ export function NumberReveal() {
               {isVoided && (
                 <motion.div
                   variants={scaleIn}
+                  initial="hidden"
+                  animate="visible"
                   className="flex items-center gap-1 rounded-full bg-red-900/60 px-4 py-1 text-base font-bold text-red-300"
                 >
                   <span>🚨</span>
@@ -188,6 +180,8 @@ export function NumberReveal() {
               {!isVoided && hasCollision && collisionCount >= 2 && (
                 <motion.div
                   variants={scaleIn}
+                  initial="hidden"
+                  animate="visible"
                   className="flex items-center gap-1 rounded-full bg-amber-900/60 px-4 py-1 text-base font-bold text-amber-300"
                 >
                   <span>⚡</span>
@@ -197,12 +191,13 @@ export function NumberReveal() {
             </motion.div>
           );
         })}
-      </motion.div>
+      </div>
 
-      {/* Voided numbers summary */}
       {voidedNumbers.length > 0 && (
         <motion.div
           variants={scaleIn}
+          initial="hidden"
+          animate="visible"
           className="flex items-center gap-3 rounded-xl border-2 border-red-700/50 bg-red-950/30 px-6 py-3"
         >
           <span className="text-3xl">🚨</span>
@@ -214,7 +209,7 @@ export function NumberReveal() {
           </div>
         </motion.div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
