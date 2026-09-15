@@ -97,6 +97,26 @@ describe('GameEngine pause/resume and skip', () => {
     engine.skipPlayer('p1');
     expect(room.currentPickerIndex).toBe(1);
   });
+
+  it('skips a disconnected picker instead of waiting for the gem timer', () => {
+    const room = new Room('GEMOFF', 'Host', 'token', 4);
+    room.phase = 'ORDER_CALCULATION';
+    room.selectionOrder = ['p1', 'p2'];
+    room.currentGems = [makeGem('g1'), makeGem('g2'), makeGem('g3'), makeGem('g4')];
+    const p1 = makePlayer('p1', 'A', 1);
+    p1.isConnected = false;
+    room.players.set('p1', p1);
+    room.players.set('p2', makePlayer('p2', 'B', 2));
+
+    const timers = new TimerManager();
+    const engine = new GameEngine(room, timers, () => {});
+    engine.startGemSelection();
+
+    expect(room.phase).toBe('GEM_SELECTION');
+    expect(room.currentPickerIndex).toBe(1);
+    expect(room.getCurrentPickerId()).toBe('p2');
+    timers.clearAll();
+  });
 });
 
 function resetDb(): void {

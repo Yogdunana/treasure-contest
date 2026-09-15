@@ -22,8 +22,12 @@ export interface SocketData {
   roomCode?: string;
   /** The client role: player, screen, host, or queued (waiting queue). */
   role?: ClientRole | 'queued';
-  /** The player UUID (set for player-role sockets). */
+  /** The player UUID (set for player-role sockets after join/reconnect). */
   playerId?: string;
+  /** Player ID from the HTTP-only cookie. Not proof of having joined. */
+  cookiePlayerId?: string;
+  /** Room code from the HTTP-only cookie. Not proof of having joined. */
+  cookieRoomCode?: string;
   /** The host token (set for host-role sockets, used for verification). */
   hostToken?: string;
   /** The browser fingerprint provided by the client (Layer-3 reconnect). */
@@ -145,12 +149,14 @@ export function authMiddleware(
   const cookiePlayerId = cookies[COOKIE_NAMES.playerId];
   const cookieRoomCode = cookies[COOKIE_NAMES.roomCode];
 
-  // Attach to socket.data so reconnect handlers can use them later
+  // Stash cookie identity separately. Setting playerId/roomCode here made a
+  // never-joined socket look seated, so its disconnect marked the real
+  // player offline (or raced a newer tab that already reconnected).
   if (cookiePlayerId) {
-    socket.data.playerId = cookiePlayerId;
+    socket.data.cookiePlayerId = cookiePlayerId;
   }
   if (cookieRoomCode) {
-    socket.data.roomCode = cookieRoomCode;
+    socket.data.cookieRoomCode = cookieRoomCode;
   }
 
   // 3. Log the connection attempt

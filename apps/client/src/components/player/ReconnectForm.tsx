@@ -14,6 +14,7 @@ import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { socket } from '../../lib/socket-client';
 import { useSocketStore } from '../../store/socket-store';
+import { useGameStore } from '../../store/game-store';
 import { saveAuthToLocal } from '../../lib/auth-storage';
 import { persistPlayerSession } from '../../lib/session';
 import type { RoomJoinAck } from '@treasure-contest/shared';
@@ -55,6 +56,9 @@ export function ReconnectForm({ roomCode, onSuccess }: ReconnectFormProps) {
           if (ack.playerId && ack.authToken) {
             saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
             void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+          }
+          if (ack.snapshot) {
+            useGameStore.getState().setSnapshot(ack.snapshot);
           }
           useSocketStore.setState({ role: 'player', roomCode });
           onSuccess?.();

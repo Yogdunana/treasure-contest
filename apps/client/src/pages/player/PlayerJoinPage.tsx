@@ -142,9 +142,16 @@ export default function PlayerJoinPage() {
     if (!roomCode) return;
 
     const applyJoinAck = (ack: RoomJoinAck): boolean => {
-      if (ack.success && ack.playerId && ack.authToken && roomCode) {
+      if (!ack.success) return false;
+      if (ack.snapshot) {
+        useGameStore.getState().setSnapshot(ack.snapshot);
+      }
+      if (ack.playerId && ack.authToken && roomCode) {
         saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
         void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+      }
+      if (ack.playerId && roomCode) {
+        navigate(`/play/${roomCode}/game`);
         return true;
       }
       return false;
@@ -238,6 +245,9 @@ export default function PlayerJoinPage() {
         },
         (ack: RoomJoinAck) => {
           if (ack.success && ack.queued) {
+            if (ack.snapshot) {
+              useGameStore.getState().setSnapshot(ack.snapshot);
+            }
             useGameStore.setState({
               playerId: null,
               snapshotRole: 'queued',
@@ -246,9 +256,14 @@ export default function PlayerJoinPage() {
             setMode('queue');
             return;
           }
-          if (ack.success && ack.playerId && ack.authToken && roomCode) {
-            saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
-            void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+          if (ack.success && ack.playerId && roomCode) {
+            if (ack.snapshot) {
+              useGameStore.getState().setSnapshot(ack.snapshot);
+            }
+            if (ack.authToken) {
+              saveAuthToLocal(roomCode, ack.playerId, ack.authToken);
+              void persistPlayerSession(ack.playerId, roomCode, ack.authToken);
+            }
             navigate(`/play/${roomCode}/game`);
             return;
           }

@@ -209,12 +209,30 @@ export function checkAllSubmitted(room: Room): boolean {
 }
 
 /**
+ * Consume the lowest remaining number for a player who has not submitted.
+ */
+function autoSubmitLowestNumber(player: Player): void {
+  if (player.roundSubmission !== null) return;
+  if (player.availableNumbers.length === 0) return;
+  const lowest = Math.min(...player.availableNumbers);
+  player.availableNumbers = player.availableNumbers.filter((n) => n !== lowest);
+  player.usedNumbers = [...player.usedNumbers, lowest];
+  player.roundSubmission = lowest;
+}
+
+/**
  * Transition from NUMBER_SELECTION to NUMBER_REVEAL.
  *
  * Populates revealedNumbers with all submitted numbers.
  */
 export function revealNumbers(room: Room): void {
   if (!validatePhase(room.phase, 'NUMBER_SELECTION')) return;
+
+  // Timeout / AFK / disconnect: anyone who did not pick still consumes
+  // their lowest remaining number so sitting out is not an advantage.
+  for (const player of room.players.values()) {
+    autoSubmitLowestNumber(player);
+  }
 
   // Build revealed numbers from all players who submitted
   room.revealedNumbers = [];

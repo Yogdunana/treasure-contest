@@ -178,21 +178,16 @@ function handleRoomJoin(
       break;
 
     case 'screen':
-      handleScreenJoin(io, socket, room, broadcaster);
-      if (ack) ack({ success: true, roomCode });
+      handleScreenJoin(io, socket, room, broadcaster, ack);
       break;
 
     case 'host': {
-      const joined = handleHostJoin(io, socket, room, playerName, hostToken, broadcaster);
-      if (ack) {
-        if (joined) {
-          ack({ success: true, roomCode: room.code, hostToken: socket.data.hostToken });
-        } else {
-          ack({
-            success: false,
-            error: { code: 'NOT_HOST', message: 'Invalid host token' },
-          });
-        }
+      const joined = handleHostJoin(io, socket, room, playerName, hostToken, broadcaster, ack);
+      if (!joined && ack) {
+        ack({
+          success: false,
+          error: { code: 'NOT_HOST', message: 'Invalid host token' },
+        });
       }
       break;
     }
@@ -251,6 +246,17 @@ function handlePlayerJoin(
     }
 
     if (decision.action === 'join_new') {
+      if (decision.evictPlayerId) {
+        const evicted = room.players.get(decision.evictPlayerId);
+        roomManager.removePlayerFromRoom(room.code, decision.evictPlayerId);
+        logger.info('Evicted disconnected lobby seat for new joiner', {
+          room: room.code,
+          evictedPlayerId: decision.evictPlayerId,
+          evictedName: evicted?.name,
+          incomingName: playerName,
+        });
+      }
+
       const result = roomManager.addPlayerToRoom(
         room.code,
         playerName,
@@ -289,15 +295,11 @@ function handlePlayerJoin(
         seat: result.player.seatNumber,
       });
 
-      if (ack) {
-        ack({
-          success: true,
-          roomCode: room.code,
-          playerId: result.player.id,
-          authToken: result.authToken,
-          seatNumber: result.player.seatNumber,
-        });
-      }
+      ackJoinSuccess(socket, room, broadcaster, ack, {
+        playerId: result.player.id,
+        authToken: result.authToken,
+        seatNumber: result.player.seatNumber,
+      });
       return;
     }
 
@@ -362,12 +364,14 @@ function handlePlayerJoin(
       position: entry.position,
     });
 
+    const snapshot = broadcaster.sendSnapshot(socket, room);
     if (ack) {
       ack({
         success: true,
         roomCode: room.code,
         queued: true,
         queuePosition: entry.position,
+        ...(snapshot ? { snapshot } : {}),
       });
     }
     return;
@@ -403,8 +407,6 @@ function handlePlayerJoin(
 
     // Notify the room
     io.to(room.code).emit('player:reconnected', { playerId: existingPlayer.id });
-
-    // Broadcast updated state
     broadcaster.broadcast(room);
 
     logger.info('Player reconnected via room:join (name match)', {
@@ -413,15 +415,11 @@ function handlePlayerJoin(
       name: existingPlayer.name,
     });
 
-    if (ack) {
-      ack({
-        success: true,
-        roomCode: room.code,
-        playerId: existingPlayer.id,
-        authToken: lookupPlayerAuthToken(existingPlayer.id),
-        seatNumber: existingPlayer.seatNumber,
-      });
-    }
+    ackJoinSuccess(socket, room, broadcaster, ack, {
+      playerId: existingPlayer.id,
+      authToken: lookupPlayerAuthToken(existingPlayer.id),
+      seatNumber: existingPlayer.seatNumber,
+    });
     return;
   }
 
@@ -440,9 +438,11 @@ function handleScreenJoin(
   socket: AppSocket,
   room: Room,
   broadcaster: Broadcaster,
+  ack: ((response: RoomJoinAck) => void) | undefined,
 ): void {
   // A later screen tab replaces the previous one. Do not require a
-  // particular phase — GAME_OVER / post-restart LOBBY must still attach.
+  // particular phase — GAME_OVER / post-restart LOBBY / mid-game refresh
+  // must still attach and receive the current public state.
   room.screenSocketId = socket.id;
 
   // Update DB
@@ -452,12 +452,14 @@ function handleScreenJoin(
     logger.error('Failed to update screen socket ID in DB', { error: err });
   }
 
-  // Set socket data
+  // Set socket data BEFORE building the snapshot so role === 'screen'.
   socket.join(room.code);
   socket.data.roomCode = room.code;
   socket.data.role = 'screen';
 
-  // Broadcast current state to all (screen gets ScreenSnapshot)
+  // Direct snapshot + ack payload: refresh must not depend on
+  // async fetchSockets() after socket.join(), which can miss this socket.
+  const snapshot = broadcaster.sendSnapshot(socket, room);
   broadcaster.broadcast(room);
 
   logger.info('Screen joined room', {
@@ -465,8 +467,17 @@ function handleScreenJoin(
     socketId: socket.id,
     phase: room.phase,
     players: room.players.size,
+    connectedPlayers: room.getConnectedPlayers().length,
     session: room.gameSession,
   });
+
+  if (ack) {
+    ack({
+      success: true,
+      roomCode: room.code,
+      ...(snapshot ? { snapshot } : {}),
+    });
+  }
 }
 
 /**
@@ -482,6 +493,7 @@ function handleHostJoin(
   hostName: string,
   payloadHostToken: string | undefined,
   broadcaster: Broadcaster,
+  ack?: ((response: RoomJoinAck) => void) | undefined,
 ): boolean {
   // Token may arrive in the join payload (refresh / reconnect) or in
   // handshake.auth (set before socket.connect). Either is sufficient.
@@ -525,7 +537,7 @@ function handleHostJoin(
   socket.data.role = 'host';
   socket.data.hostToken = hostToken;
 
-  // Broadcast current state (host gets HostSnapshot)
+  const snapshot = broadcaster.sendSnapshot(socket, room);
   broadcaster.broadcast(room);
 
   logger.info('Host joined room', {
@@ -533,6 +545,15 @@ function handleHostJoin(
     socketId: socket.id,
     hostName: hostName || room.hostName,
   });
+
+  if (ack) {
+    ack({
+      success: true,
+      roomCode: room.code,
+      hostToken,
+      ...(snapshot ? { snapshot } : {}),
+    });
+  }
   return true;
 }
 
@@ -642,8 +663,6 @@ function handleReconnectByToken(
 
   // Notify the room
   io.to(roomCode).emit('player:reconnected', { playerId });
-
-  // Broadcast updated state
   broadcaster.broadcast(room);
 
   logger.info('Player reconnected (Layer 1: token)', {
@@ -652,15 +671,11 @@ function handleReconnectByToken(
     name: player.name,
   });
 
-  if (ack) {
-    ack({
-      success: true,
-      roomCode,
-      playerId,
-      authToken: lookupPlayerAuthToken(playerId),
-      seatNumber: player.seatNumber,
-    });
-  }
+  ackJoinSuccess(socket, room, broadcaster, ack, {
+    playerId,
+    authToken: lookupPlayerAuthToken(playerId),
+    seatNumber: player.seatNumber,
+  });
 }
 
 // ============================================================================
@@ -686,19 +701,33 @@ function handleReconnectByCookie(
   broadcaster: Broadcaster,
 ): void {
   const { roomCode } = payload;
-  // Player ID comes from the cookie (set by middleware)
-  const cookiePlayerId = socket.data.playerId;
+  const cookiePlayerId = socket.data.cookiePlayerId;
+  const cookieRoomCode = socket.data.cookieRoomCode;
 
   logger.info('room:reconnect_by_cookie (Layer 2: cookie)', {
     socketId: socket.id,
     roomCode,
     cookiePlayerId: cookiePlayerId ?? null,
+    cookieRoomCode: cookieRoomCode ?? null,
   });
 
   if (!cookiePlayerId) {
     const error = {
       code: 'PLAYER_NOT_FOUND' as const,
       message: 'No player cookie found. Please rejoin the room.',
+    };
+    broadcaster.sendError(socket, error.code, error.message);
+    if (ack) ack({ success: false, error });
+    return;
+  }
+
+  if (
+    cookieRoomCode &&
+    normalizeRoomCode(cookieRoomCode) !== normalizeRoomCode(roomCode)
+  ) {
+    const error = {
+      code: 'PLAYER_NOT_FOUND' as const,
+      message: 'Cookie belongs to a different room',
     };
     broadcaster.sendError(socket, error.code, error.message);
     if (ack) ack({ success: false, error });
@@ -721,6 +750,10 @@ function handleReconnectByCookie(
     };
     broadcaster.sendError(socket, error.code, error.message);
     if (ack) ack({ success: false, error });
+    return;
+  }
+
+  if (rejectExpiredSession(socket, room, cookiePlayerId, broadcaster, ack)) {
     return;
   }
 
@@ -754,15 +787,11 @@ function handleReconnectByCookie(
     name: player.name,
   });
 
-  if (ack) {
-    ack({
-      success: true,
-      roomCode,
-      playerId: cookiePlayerId,
-      authToken: lookupPlayerAuthToken(cookiePlayerId),
-      seatNumber: player.seatNumber,
-    });
-  }
+  ackJoinSuccess(socket, room, broadcaster, ack, {
+    playerId: cookiePlayerId,
+    authToken: lookupPlayerAuthToken(cookiePlayerId),
+    seatNumber: player.seatNumber,
+  });
 }
 
 // ============================================================================
@@ -810,21 +839,31 @@ function handleReconnectByFingerprint(
     logger.error('Failed to query players from DB for fingerprint reconnect', { error: err });
   }
 
-  // Prefer an exact fingerprint on a disconnected seat, then a fuzzy match
-  // on disconnected seats only — never steal a currently connected player.
-  let matchedPlayerId: string | null = null;
+  // Prefer an exact fingerprint (including a same-device tab takeover),
+  // then a fuzzy match on disconnected seats only — never steal someone
+  // else's currently connected seat via a fuzzy match.
+  let exactDisconnectedId: string | null = null;
+  let exactConnectedId: string | null = null;
   let fuzzyMatchId: string | null = null;
 
   for (const dbPlayer of dbPlayers) {
     const seated = room.players.get(dbPlayer.id);
-    if (!seated || seated.isConnected) continue;
+    if (!seated) continue;
     if (!dbPlayer.browserFingerprint) continue;
 
     if (dbPlayer.browserFingerprint === fingerprint) {
-      matchedPlayerId = dbPlayer.id;
-      break;
+      if (!seated.isConnected) {
+        exactDisconnectedId = dbPlayer.id;
+        break;
+      }
+      if (!exactConnectedId) {
+        exactConnectedId = dbPlayer.id;
+      }
+      continue;
     }
+
     if (
+      !seated.isConnected &&
       !fuzzyMatchId &&
       compareFingerprints(dbPlayer.browserFingerprint, fingerprint)
     ) {
@@ -832,9 +871,7 @@ function handleReconnectByFingerprint(
     }
   }
 
-  if (!matchedPlayerId) {
-    matchedPlayerId = fuzzyMatchId;
-  }
+  const matchedPlayerId = exactDisconnectedId ?? exactConnectedId ?? fuzzyMatchId;
 
   if (!matchedPlayerId) {
     const error = {
@@ -877,15 +914,11 @@ function handleReconnectByFingerprint(
     name: player.name,
   });
 
-  if (ack) {
-    ack({
-      success: true,
-      roomCode,
-      playerId: matchedPlayerId,
-      authToken: lookupPlayerAuthToken(matchedPlayerId),
-      seatNumber: player.seatNumber,
-    });
-  }
+  ackJoinSuccess(socket, room, broadcaster, ack, {
+    playerId: matchedPlayerId,
+    authToken: lookupPlayerAuthToken(matchedPlayerId),
+    seatNumber: player.seatNumber,
+  });
 }
 
 // ============================================================================
@@ -982,15 +1015,11 @@ function handleReconnectByName(
     seatNumber,
   });
 
-  if (ack) {
-    ack({
-      success: true,
-      roomCode,
-      playerId: player.id,
-      authToken: lookupPlayerAuthToken(player.id),
-      seatNumber: player.seatNumber,
-    });
-  }
+  ackJoinSuccess(socket, room, broadcaster, ack, {
+    playerId: player.id,
+    authToken: lookupPlayerAuthToken(player.id),
+    seatNumber: player.seatNumber,
+  });
 }
 
 // ============================================================================
@@ -1000,12 +1029,9 @@ function handleReconnectByName(
 /**
  * Handle a `room:leave` event — a player, screen, or host explicitly leaving.
  *
- * Unlike `disconnect`, `room:leave` is a permanent departure:
- * - Players are removed from the in-memory room (freeing their seat).
- * - The room state is broadcast to reflect the departure.
- * - If in LOBBY phase and there are queue players, the next queue player is
- *   promoted to fill the vacant seat.
- */
+ * Lobby / GAME_OVER: the seat is removed so someone else can join.
+ * Mid-game: treated as a disconnect so numbers, gems and missions survive
+ * for reconnect. Queue promotion only runs in LOBBY.
 function handleRoomLeave(
   io: AppServer,
   socket: AppSocket,
@@ -1046,7 +1072,12 @@ function handleRoomLeave(
     } else {
       // Mid-game leave is treated as a disconnect so the seat and
       // private state (numbers, gems, missions) survive for reconnect.
-      roomManager.disconnectPlayer(roomCode, playerId);
+      const disconnected = roomManager.disconnectPlayer(roomCode, playerId, socket.id);
+      if (!disconnected) {
+        socket.leave(roomCode);
+        clearSocketData(socket);
+        return;
+      }
     }
 
     // Notify the room
@@ -1060,6 +1091,9 @@ function handleRoomLeave(
     } else if (room.phase === 'NUMBER_SELECTION') {
       const engine = roomManager.getEngine(roomCode);
       engine?.checkAllSubmittedAndProceed();
+    } else if (room.phase === 'GEM_SELECTION' && room.getCurrentPickerId() === playerId) {
+      const engine = roomManager.getEngine(roomCode);
+      engine?.onGemPickTimeout(playerId);
     }
   } else if (role === 'screen') {
     // Clear the screen socket ID
@@ -1144,8 +1178,10 @@ function handleDisconnect(
   }
 
   if (role === 'player' && playerId) {
-    // Mark the player as disconnected (do NOT remove from room)
-    roomManager.disconnectPlayer(roomCode, playerId);
+    const disconnected = roomManager.disconnectPlayer(roomCode, playerId, socket.id);
+    if (!disconnected) {
+      return;
+    }
 
     // Broadcast updated state
     broadcaster.broadcast(room);
@@ -1158,6 +1194,9 @@ function handleDisconnect(
     if (room.phase === 'NUMBER_SELECTION') {
       const engine = roomManager.getEngine(roomCode);
       engine?.checkAllSubmittedAndProceed();
+    } else if (room.phase === 'GEM_SELECTION' && room.getCurrentPickerId() === playerId) {
+      const engine = roomManager.getEngine(roomCode);
+      engine?.onGemPickTimeout(playerId);
     }
 
     // If in LOBBY phase, may trigger queue promotion.
@@ -1283,6 +1322,10 @@ function tryPromoteFromQueue(
     seatNumber: result.player.seatNumber,
   });
 
+  if (promotedSocket) {
+    broadcaster.sendSnapshot(promotedSocket, room);
+  }
+
   // Notify the room
   io.to(room.code).emit('player:joined', {
     playerId: result.player.id,
@@ -1311,15 +1354,59 @@ function tryPromoteFromQueue(
 // Helper: clear socket data
 // ============================================================================
 
-/**
- * Reset all role/room data on a socket after leaving.
- */
 function lookupPlayerAuthToken(playerId: string): string | undefined {
   try {
     return playerRepo.getPlayer(playerId)?.authToken;
   } catch {
     return undefined;
   }
+}
+
+function rejectExpiredSession(
+  socket: AppSocket,
+  room: Room,
+  playerId: string,
+  broadcaster: Broadcaster,
+  ack: ((response: RoomJoinAck) => void) | undefined,
+): boolean {
+  const token = lookupPlayerAuthToken(playerId);
+  if (!token) return false;
+
+  const verification = verifyAuthToken(token, room.gameSession);
+  if (verification.valid) return false;
+  if (verification.session === undefined || verification.session === room.gameSession) {
+    return false;
+  }
+
+  const error = {
+    code: 'SESSION_EXPIRED' as const,
+    message: 'Game session has expired. Please rejoin the room.',
+  };
+  broadcaster.sendError(socket, error.code, error.message);
+  if (ack) ack({ success: false, error });
+  return true;
+}
+
+function ackJoinSuccess(
+  socket: AppSocket,
+  room: Room,
+  broadcaster: Broadcaster,
+  ack: ((response: RoomJoinAck) => void) | undefined,
+  extra: {
+    playerId?: string;
+    authToken?: string;
+    seatNumber?: number;
+    hostToken?: string;
+  },
+): void {
+  const snapshot = broadcaster.sendSnapshot(socket, room);
+  if (!ack) return;
+  ack({
+    success: true,
+    roomCode: room.code,
+    ...extra,
+    ...(snapshot ? { snapshot } : {}),
+  });
 }
 
 /**
@@ -1378,15 +1465,11 @@ function attachReconnectedPlayer(
     via,
   });
 
-  if (ack) {
-    ack({
-      success: true,
-      roomCode: room.code,
-      playerId,
-      authToken: lookupPlayerAuthToken(playerId),
-      seatNumber: player.seatNumber,
-    });
-  }
+  ackJoinSuccess(socket, room, broadcaster, ack, {
+    playerId,
+    authToken: lookupPlayerAuthToken(playerId),
+    seatNumber: player.seatNumber,
+  });
 }
 
 function clearSocketData(socket: AppSocket): void {

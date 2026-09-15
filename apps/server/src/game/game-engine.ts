@@ -1,5 +1,6 @@
 import type { GamePhase, FinalResult } from '@treasure-contest/shared';
 import {
+  MIN_PLAYERS,
   TIMING_CONFIG,
   TOTAL_ROUNDS,
 } from '@treasure-contest/shared';
@@ -56,9 +57,11 @@ export class GameEngine {
    * proceeds to the first round.
    */
   startGame(): void {
-    // Offline seats still occupy capacity and would receive missions / ranks.
-    // Drop them before the min-player check so only people present play.
-    this.dropOfflineSeats();
+    // Only drop ghosts when the game can actually start — a premature
+    // startGame must not wipe same-name reclaimable lobby seats.
+    if (this.room.getConnectedPlayers().length >= MIN_PLAYERS) {
+      this.dropOfflineSeats();
+    }
 
     const result = stateMachine.startGame(this.room);
     if (!result.success) {
@@ -261,6 +264,11 @@ export class GameEngine {
    * Handle gem pick timeout: auto-skip the player.
    */
   onGemPickTimeout(playerId: string): void {
+    this.timerManager.clear(`gem_pick_${playerId}`);
+    if (this.room.getCurrentPickerId() !== playerId) {
+      return;
+    }
+
     logger.info('Gem pick timeout', {
       room: this.room.code,
       round: this.room.currentRound,
@@ -626,6 +634,7 @@ export class GameEngine {
       if (player.isConnected) continue;
       this.room.players.delete(player.id);
       this.room.playerAuthTokens.delete(player.id);
+      this.room.playerSocketIds.delete(player.id);
       try {
         playerRepo.deletePlayer(player.id);
       } catch (err) {
@@ -706,28 +715,40 @@ export class GameEngine {
 
   /**
    * Start the timer for the current picker, or end the round if no picker.
+   * Disconnected seats are skipped immediately so the table is not blocked
+   * for GEM_PICK_SECONDS on a player who cannot act.
    */
   private startCurrentPickerTimer(): void {
-    const playerId = this.room.getCurrentPickerId();
+    while (this.room.hasRemainingPickers() && !this.room.allGemsPicked()) {
+      const playerId = this.room.getCurrentPickerId();
+      if (!playerId) break;
 
-    if (!playerId) {
-      // No more pickers; end the round
-      this.endRound();
+      const picker = this.room.players.get(playerId);
+      if (picker && !picker.isConnected) {
+        logger.info('Skipping disconnected gem picker', {
+          room: this.room.code,
+          round: this.room.currentRound,
+          playerId,
+        });
+        this.logEvent('gem_pick_timeout', this.room.currentRound, undefined, playerId);
+        stateMachine.advancePicker(this.room);
+        continue;
+      }
+
+      this.timerManager.startGemPickTimer(
+        this.room,
+        playerId,
+        () => {
+          this.broadcast();
+        },
+        (pid) => {
+          this.onGemPickTimeout(pid);
+        },
+      );
       return;
     }
 
-    this.timerManager.startGemPickTimer(
-      this.room,
-      playerId,
-      (remaining, pid) => {
-        // onTick: broadcast timer state
-        this.broadcast();
-      },
-      (pid) => {
-        // onExpire: auto-skip
-        this.onGemPickTimeout(pid);
-      },
-    );
+    this.endRound();
   }
 
   /**

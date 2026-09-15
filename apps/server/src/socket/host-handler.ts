@@ -551,6 +551,10 @@ function handlePromotePlayer(
       authToken: result.authToken,
       seatNumber: result.player.seatNumber,
     });
+    const promotedSocket = io.sockets.sockets.get(entry.socketId);
+    if (promotedSocket) {
+      broadcaster.sendSnapshot(promotedSocket, room);
+    }
   }
 
   // Notify the room

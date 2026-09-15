@@ -107,6 +107,9 @@ export class Room {
   /** Latest auth tokens keyed by playerId (sent in private snapshots after restart). */
   playerAuthTokens: Map<string, string> = new Map();
 
+  /** Live socket id for each seated player; used to ignore stale disconnects. */
+  playerSocketIds: Map<string, string> = new Map();
+
   // -- Pause state --
   isPaused: boolean = false;
   pausedPhase: GamePhase | null = null;

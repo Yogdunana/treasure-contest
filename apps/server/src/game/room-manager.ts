@@ -393,6 +393,7 @@ export class RoomManager {
 
     room.players.set(playerId, player);
     room.playerAuthTokens.set(playerId, authToken);
+    room.playerSocketIds.set(playerId, socketId);
 
     // Persist to DB
     try {
@@ -418,7 +419,7 @@ export class RoomManager {
   }
 
   /**
-   * Permanently remove a player from the room and SQLite (lobby leave).
+   * Permanently remove a player from the room and SQLite (lobby leave / eviction).
    */
   removePlayer(code: string, playerId: string): boolean {
     const room = this.rooms.get(normalizeRoomCode(code));
@@ -426,6 +427,7 @@ export class RoomManager {
 
     const existed = room.players.delete(playerId);
     room.playerAuthTokens.delete(playerId);
+    room.playerSocketIds.delete(playerId);
     if (!existed) return false;
 
     try {
@@ -439,6 +441,14 @@ export class RoomManager {
     }
 
     return true;
+  }
+
+  /**
+   * Remove one seated player (typically a disconnected leftover) so a
+   * new lobby joiner can take a seat instead of entering the queue.
+   */
+  removePlayerFromRoom(code: string, playerId: string): boolean {
+    return this.removePlayer(code, playerId);
   }
 
   /**
@@ -456,6 +466,7 @@ export class RoomManager {
     if (!player) return null;
 
     player.isConnected = true;
+    room.playerSocketIds.set(playerId, socketId);
 
     try {
       playerRepo.updatePlayerSocket(playerId, socketId);
@@ -481,6 +492,7 @@ export class RoomManager {
       if (player.isConnected) continue;
       room.players.delete(player.id);
       room.playerAuthTokens.delete(player.id);
+      room.playerSocketIds.delete(player.id);
       removed += 1;
       try {
         playerRepo.deletePlayer(player.id);
@@ -506,16 +518,33 @@ export class RoomManager {
 
   /**
    * Mark a player as disconnected.
+   *
+   * When `socketId` is provided, a stale tab whose id no longer owns the
+   * seat is ignored so a newer reconnect is not immediately marked offline.
+   *
+   * @returns true if the player was marked disconnected.
    */
-  disconnectPlayer(code: string, playerId: string): void {
+  disconnectPlayer(code: string, playerId: string, socketId?: string): boolean {
     const room = this.rooms.get(normalizeRoomCode(code));
-    if (!room) return;
+    if (!room) return false;
 
     const player = room.players.get(playerId);
-    if (!player) return;
+    if (!player) return false;
+
+    const currentSocketId = room.playerSocketIds.get(playerId);
+    if (socketId && currentSocketId && currentSocketId !== socketId) {
+      logger.info('Ignoring stale disconnect for a superseded socket', {
+        room: room.code,
+        playerId,
+        socketId,
+        currentSocketId,
+      });
+      return false;
+    }
 
     player.isConnected = false;
     player.isReady = false;
+    room.playerSocketIds.delete(playerId);
 
     try {
       playerRepo.updatePlayerConnection(playerId, false);
@@ -523,6 +552,8 @@ export class RoomManager {
     } catch (err) {
       logger.error('Failed to update player disconnection in DB', { error: err });
     }
+
+    return true;
   }
 
   /**

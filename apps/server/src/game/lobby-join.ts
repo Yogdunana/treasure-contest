@@ -8,7 +8,7 @@ import { QUEUE_CONFIG } from '@treasure-contest/shared';
  */
 export type LobbyJoinDecision =
   | { action: 'reconnect'; playerId: string }
-  | { action: 'join_new' }
+  | { action: 'join_new'; evictPlayerId?: string }
   | { action: 'name_taken' }
   | { action: 'queue' }
   | { action: 'queue_full' };
@@ -41,11 +41,13 @@ export function findPlayerByName<T extends { name: string }>(
  * Order of precedence:
  * 1. Same name as a disconnected seat-holder → reclaim that seat.
  * 2. Same name as a connected player → NAME_TAKEN.
- * 3. Empty seat below target capacity → new player.
- * 4. At capacity → waiting queue (or QUEUE_FULL).
+ * 3. Connected count below target → new player. If leftover disconnected
+ *    seats are filling the roster (post-restart mass-disconnect), evict
+ *    one so the joiner sits instead of entering the waiting queue.
+ * 4. Enough players already connected → waiting queue (or QUEUE_FULL).
  */
 export function decideLobbyJoin(input: {
-  players: Iterable<{ id: string; name: string; isConnected: boolean }>;
+  players: Iterable<{ id: string; name: string; isConnected: boolean; seatNumber?: number }>;
   playerName: string;
   targetPlayers: number;
   queueLength: number;
@@ -62,8 +64,14 @@ export function decideLobbyJoin(input: {
     return { action: 'name_taken' };
   }
 
-  const seatedCount = seated.length;
-  if (seatedCount < input.targetPlayers) {
+  const connectedCount = seated.filter((p) => p.isConnected).length;
+  if (connectedCount < input.targetPlayers) {
+    if (seated.length >= input.targetPlayers) {
+      const victim = pickDisconnectedSeatToEvict(seated);
+      if (victim) {
+        return { action: 'join_new', evictPlayerId: victim.id };
+      }
+    }
     return { action: 'join_new' };
   }
 
@@ -72,4 +80,13 @@ export function decideLobbyJoin(input: {
   }
 
   return { action: 'queue' };
+}
+
+function pickDisconnectedSeatToEvict(
+  seated: { id: string; isConnected: boolean; seatNumber?: number }[],
+): { id: string } | undefined {
+  const disconnected = seated.filter((p) => !p.isConnected);
+  if (disconnected.length === 0) return undefined;
+  disconnected.sort((a, b) => (a.seatNumber ?? 0) - (b.seatNumber ?? 0));
+  return disconnected[0];
 }

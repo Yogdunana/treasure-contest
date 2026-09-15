@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Gem, Player, PlayerMission } from '@treasure-contest/shared';
 import { MISSION_REWARDS } from '@treasure-contest/shared';
 import { Room } from './room.js';
-import { calculateFinalScores } from './state-machine.js';
+import { calculateFinalScores, revealNumbers } from './state-machine.js';
 import { resolveTies } from '@treasure-contest/shared';
 
 function gem(id: string, color: Gem['color'], value: number): Gem {
@@ -134,5 +134,40 @@ describe('RESULTS_REVEAL order', () => {
     const snapshot = room.toPublicState();
     expect(snapshot.finalResults).toHaveLength(1);
     expect(snapshot.finalResults?.[0]?.playerId).toBe('loser');
+  });
+});
+
+describe('revealNumbers timeout auto-submit', () => {
+  it('consumes the lowest remaining number for anyone who did not pick', () => {
+    const room = new Room('AUTO', 'Host', 'token', 4);
+    room.phase = 'NUMBER_SELECTION';
+
+    const connected = makePlayer('p1', 'Ava', 1, []);
+    connected.availableNumbers = [2, 5, 7];
+    connected.roundSubmission = null;
+
+    const disconnected = makePlayer('p2', 'Ben', 2, []);
+    disconnected.isConnected = false;
+    disconnected.availableNumbers = [1, 3, 6];
+    disconnected.roundSubmission = null;
+
+    const alreadyIn = makePlayer('p3', 'Cara', 3, []);
+    alreadyIn.availableNumbers = [1, 2, 3];
+    alreadyIn.usedNumbers = [7];
+    alreadyIn.roundSubmission = 7;
+
+    for (const p of [connected, disconnected, alreadyIn]) {
+      room.players.set(p.id, p);
+    }
+
+    revealNumbers(room);
+
+    expect(room.phase).toBe('NUMBER_REVEAL');
+    expect(connected.roundSubmission).toBe(2);
+    expect(connected.availableNumbers).toEqual([5, 7]);
+    expect(disconnected.roundSubmission).toBe(1);
+    expect(disconnected.availableNumbers).toEqual([3, 6]);
+    expect(alreadyIn.roundSubmission).toBe(7);
+    expect(room.revealedNumbers.map((r) => r.number).sort()).toEqual([1, 2, 7]);
   });
 });
