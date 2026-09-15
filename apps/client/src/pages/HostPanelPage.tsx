@@ -26,6 +26,7 @@ import { useGameStore } from '../store/game-store';
 import { getHostAuth } from '../lib/auth-storage';
 import { useGamePhase } from '../hooks/useGamePhase';
 import { fadeIn } from '../animations/variants';
+import { TOTAL_ROUNDS } from '@treasure-contest/shared';
 import {
   QRDisplay,
   PhaseTracker,
@@ -67,8 +68,8 @@ export default function HostPanelPage() {
 
   const phase = useGameStore((s) => s.phase);
   const currentRound = useGameStore((s) => s.currentRound);
-  const allPlayers = useGameStore((s) => s.allPlayers);
   const playerSeats = useGameStore((s) => s.playerSeats);
+  const targetPlayers = useGameStore((s) => s.targetPlayers);
   const snapshotRole = useGameStore((s) => s.snapshotRole);
   const snapshotRoomCode = useGameStore((s) => s.snapshotRoomCode);
   const { isPaused } = useGamePhase();
@@ -225,7 +226,7 @@ export default function HostPanelPage() {
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] text-slate-600">回合</span>
               <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">
-                {currentRound > 0 ? `${currentRound}/6` : '--'}
+                {currentRound > 0 ? `${currentRound}/${TOTAL_ROUNDS}` : '--'}
               </span>
             </div>
           </div>
@@ -238,7 +239,7 @@ export default function HostPanelPage() {
                 {connectedPlayers}
               </span>
               <span className="text-[10px] text-slate-600">
-                /{allPlayers.length}
+                /{targetPlayers}
               </span>
             </div>
             <div className="flex items-center gap-1">
