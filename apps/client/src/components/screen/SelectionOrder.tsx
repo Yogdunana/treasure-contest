@@ -67,12 +67,17 @@ export function SelectionOrder() {
     return info?.group.isVoided ?? false;
   };
 
+  const crowded = selectionOrder.length >= 7;
+
   return (
     <motion.div
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
-      className="flex h-full w-full flex-col items-center justify-center gap-8"
+      className={clsx(
+        'flex h-full w-full flex-col items-center justify-center',
+        crowded ? 'gap-5' : 'gap-8',
+      )}
     >
       {/* Title */}
       <motion.div variants={fadeIn} className="text-center">
@@ -91,7 +96,10 @@ export function SelectionOrder() {
       {selectionOrder.length > 0 ? (
         <motion.div
           variants={staggerContainer}
-          className="flex flex-wrap items-center justify-center gap-3"
+          className={clsx(
+            'flex flex-wrap items-center justify-center',
+            crowded ? 'gap-2' : 'gap-3',
+          )}
         >
           {selectionOrder.map((playerId, index) => {
             const seat = seatMap.get(playerId);
@@ -154,7 +162,8 @@ export function SelectionOrder() {
                 {/* Player card */}
                 <motion.div
                   className={clsx(
-                    'flex flex-col items-center gap-2 rounded-2xl border-2 p-4',
+                    'flex flex-col items-center rounded-2xl border-2',
+                    crowded ? 'gap-1 p-2.5' : 'gap-2 p-4',
                     borderClass,
                     bgClass,
                     isVoided && 'opacity-60',
@@ -184,7 +193,7 @@ export function SelectionOrder() {
                 </motion.div>
 
                 {/* Arrow to next player */}
-                {index < selectionOrder.length - 1 && (
+                {index < selectionOrder.length - 1 && !crowded && (
                   <motion.div
                     className="mx-2 flex items-center"
                     initial={{ opacity: 0, x: -20 }}

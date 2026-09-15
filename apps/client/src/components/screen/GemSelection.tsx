@@ -1,13 +1,10 @@
 /**
  * GemSelection - GEM_SELECTION phase display for the big screen.
  *
- * Shows remaining gems in the center.  The current picker is highlighted
- * with a golden border and glow, with a 5-second countdown ring.  When
- * a gem is picked, it flies from center to the picker's area (using
- * layoutId for shared element animation).  The picker area shows their
- * collected gems.  "轮到 [玩家名] 选宝石" text is shown, and the
- * selection order is displayed at the bottom with completed pickers
- * dimmed.
+ * Layout for 1080p projector:
+ * - Compact header: whose turn + countdown (no duplicate identity card)
+ * - Center stage: remaining gems large and spaced
+ * - Bottom rail: pick order, with the taken gem shown on each chip
  */
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,11 +19,9 @@ import {
   type PlayerSeat,
 } from '@treasure-contest/shared';
 import {
-  gemReveal,
   staggerContainer,
   fadeIn,
   scaleIn,
-  slideIn,
 } from '../../animations/variants';
 
 /** Seat badge background colors. */
@@ -48,7 +43,6 @@ export function GemSelection() {
   const playerSeats = useGameStore((s) => s.playerSeats);
   const selectionOrder = useGameStore((s) => s.selectionOrder);
 
-  // Map player IDs to seats
   const seatMap = new Map<string, PlayerSeat>();
   for (const seat of playerSeats) {
     seatMap.set(seat.playerId, seat);
@@ -63,16 +57,16 @@ export function GemSelection() {
     ? Math.ceil(timer.remaining / 1000)
     : totalSeconds;
 
-  // Split gems into remaining and picked
   const remainingGems = gems.filter((g) => g.pickedBy === undefined);
   const pickedGems = gems.filter((g) => g.pickedBy !== undefined);
+  const orderCount = selectionOrder.length;
+  const crowded = orderCount >= 7;
+  const gemSize = remainingGems.length >= 4 ? 118 : remainingGems.length === 3 ? 128 : 132;
 
-  // Find the current picker's index in the selection order
   const currentPickerIndex = currentPickerId
     ? selectionOrder.indexOf(currentPickerId)
     : -1;
 
-  // Group picked gems by picker
   const gemsByPicker = new Map<string, Gem[]>();
   for (const gem of pickedGems) {
     if (gem.pickedBy) {
@@ -87,234 +81,215 @@ export function GemSelection() {
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
-      className="flex h-full w-full flex-col"
+      className="flex h-full min-h-0 w-full flex-col px-6"
     >
-      {/* Top: Current picker announcement */}
-      <motion.div variants={fadeIn} className="flex justify-center pt-4">
+      {/* Compact turn header */}
+      <motion.div variants={fadeIn} className="flex shrink-0 justify-center pt-2">
         {currentPicker ? (
-          <motion.div
-            className="flex items-center gap-4 rounded-2xl border-2 border-amber-400/60 bg-amber-950/30 px-8 py-4"
-            animate={{
-              boxShadow: [
-                '0 0 20px rgba(251,191,36,0.3)',
-                '0 0 40px rgba(251,191,36,0.6)',
-                '0 0 20px rgba(251,191,36,0.3)',
-              ],
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-          >
-            <span className="text-3xl text-amber-400">👑</span>
-            <span className="text-3xl font-bold text-amber-200">
-              轮到 {currentPicker.name} 选宝石
-            </span>
-          </motion.div>
+          <div className="flex items-center gap-6 rounded-2xl border border-amber-400/40 bg-slate-900/60 px-6 py-2.5">
+            <div className="flex items-center gap-3">
+              <span
+                className={clsx(
+                  'flex h-11 w-11 items-center justify-center rounded-full text-lg font-bold text-white',
+                  SEAT_BG[(currentPicker.seatNumber - 1) % SEAT_BG.length],
+                )}
+              >
+                {currentPicker.seatNumber}
+              </span>
+              <div>
+                <p className="text-sm text-amber-300/80">当前选择</p>
+                <p className="text-2xl font-bold leading-tight text-amber-100">
+                  轮到 {currentPicker.name} 选宝石
+                </p>
+              </div>
+            </div>
+
+            <div className="h-10 w-px bg-amber-400/25" />
+
+            <CountdownRing
+              seconds={remainingSeconds}
+              totalSeconds={totalSeconds}
+              size={72}
+              strokeWidth={6}
+            />
+
+            <div className="h-10 w-px bg-amber-400/25" />
+
+            <p className="text-lg text-slate-400">
+              剩余{' '}
+              <span className="text-2xl font-bold tabular-nums text-slate-100">
+                {remainingGems.length}
+              </span>{' '}
+              颗
+            </p>
+          </div>
         ) : (
           <p className="text-2xl text-slate-400">准备选宝石...</p>
         )}
       </motion.div>
 
-      {/* Main content: gems + picker */}
-      <div className="flex flex-1 items-center justify-center gap-8">
-        {/* Center: remaining gems + countdown */}
-        <motion.div
-          variants={scaleIn}
-          className="flex flex-col items-center gap-6"
-        >
-          {/* Countdown ring */}
-          {currentPicker && (
-            <CountdownRing
-              seconds={remainingSeconds}
-              totalSeconds={totalSeconds}
-              size={120}
-              strokeWidth={8}
-            />
-          )}
-
-          {/* Remaining gems */}
-          <div className="flex items-center justify-center gap-6">
-            <AnimatePresence mode="popLayout">
-              {remainingGems.map((gem) => (
+      {/* Remaining gems — large, centered, generous spacing */}
+      <motion.div
+        variants={scaleIn}
+        className="flex min-h-0 flex-1 items-center justify-center"
+      >
+        <div className="flex items-center justify-center gap-10">
+          <AnimatePresence mode="popLayout">
+            {remainingGems.map((gem) => (
+              <motion.div
+                key={gem.id}
+                layoutId={`gem-${gem.id}`}
+                className={`gem-${gem.color} flex flex-col items-center gap-3`}
+                initial={{ scale: 0, rotate: -180, opacity: 0 }}
+                animate={{
+                  scale: 1,
+                  rotate: 0,
+                  opacity: 1,
+                }}
+                exit={{
+                  scale: 0.4,
+                  opacity: 0,
+                  transition: { duration: 0.25 },
+                }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 200,
+                  damping: 16,
+                }}
+              >
                 <motion.div
-                  key={gem.id}
-                  layoutId={`gem-${gem.id}`}
-                  className={`gem-${gem.color} relative flex flex-col items-center gap-2`}
-                  initial={{ scale: 0, rotate: -180, opacity: 0 }}
+                  className="rounded-[2rem] p-6"
+                  style={{ background: 'rgba(15,23,42,0.55)' }}
                   animate={{
-                    scale: 1,
-                    rotate: 0,
-                    opacity: 1,
                     boxShadow: [
-                      `0 0 20px var(--gem-glow)`,
-                      `0 0 40px var(--gem-glow)`,
-                      `0 0 20px var(--gem-glow)`,
+                      `0 0 24px var(--gem-glow)`,
+                      `0 0 48px var(--gem-glow)`,
+                      `0 0 24px var(--gem-glow)`,
                     ],
                   }}
-                  exit={{
-                    scale: 0,
-                    opacity: 0,
-                    transition: { duration: 0.3 },
-                  }}
                   transition={{
-                    scale: { type: 'spring', stiffness: 200, damping: 15 },
-                    rotate: { type: 'spring', stiffness: 200, damping: 15 },
-                    boxShadow: {
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    },
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
                   }}
                 >
-                  <div
-                    className="rounded-3xl p-4"
-                    style={{ background: 'rgba(15,23,42,0.6)' }}
-                  >
-                    <GemIcon color={gem.color} size={100} value={gem.value} />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-base text-slate-300">
-                      {GEM_COLOR_LABELS[gem.color]}
-                    </p>
-                    <p className="text-2xl font-bold text-amber-400">
-                      {gem.value}分
-                    </p>
-                  </div>
+                  <GemIcon color={gem.color} size={gemSize} value={gem.value} />
                 </motion.div>
-              ))}
-            </AnimatePresence>
+                <div className="text-center">
+                  <p className="text-xl font-semibold text-slate-200">
+                    {GEM_COLOR_LABELS[gem.color]}
+                  </p>
+                  <p className="text-3xl font-bold text-amber-400">
+                    {gem.value}
+                    <span className="ml-1 text-lg font-medium text-slate-500">分</span>
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
 
-            {remainingGems.length === 0 && (
-              <motion.p
-                variants={fadeIn}
-                className="text-2xl text-slate-500"
-              >
-                所有宝石已被选走
-              </motion.p>
-            )}
-          </div>
-        </motion.div>
+          {remainingGems.length === 0 && (
+            <motion.p variants={fadeIn} className="text-2xl text-slate-500">
+              所有宝石已被选走
+            </motion.p>
+          )}
+        </div>
+      </motion.div>
 
-        {/* Right: Current picker's collected gems */}
-        {currentPicker && (
-          <motion.div
-            variants={slideIn}
-            className="flex flex-col items-center gap-4"
-          >
-            <div
-              className={clsx(
-                'flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white',
-                SEAT_BG[(currentPicker.seatNumber - 1) % SEAT_BG.length],
-              )}
-            >
-              {currentPicker.seatNumber}
-            </div>
-            <p className="text-xl font-bold text-amber-200">
-              {currentPicker.name}
-            </p>
-
-            {/* Collected gems */}
-            <div className="flex min-h-[120px] min-w-[120px] flex-wrap items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/40 bg-amber-950/20 p-4">
-              <AnimatePresence>
-                {(gemsByPicker.get(currentPickerId!) ?? []).map((gem) => (
-                  <motion.div
-                    key={gem.id}
-                    layoutId={`gem-${gem.id}`}
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 0.8, opacity: 1 }}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 200,
-                      damping: 18,
-                    }}
-                  >
-                    <GemIcon color={gem.color} size={48} value={gem.value} />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {(gemsByPicker.get(currentPickerId!) ?? []).length === 0 && (
-                <span className="text-sm text-slate-600">尚未获得宝石</span>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </div>
-
-      {/* Bottom: Selection order progress */}
+      {/* Pick-order timeline */}
       <motion.div
         variants={fadeIn}
-        className="flex justify-center gap-2 pb-4 pt-4"
+        className={clsx(
+          'flex shrink-0 flex-wrap items-center justify-center pb-3 pt-2',
+          crowded ? 'gap-x-2 gap-y-2 px-2' : 'gap-x-3 gap-y-3 px-4',
+        )}
       >
         {selectionOrder.map((playerId, index) => {
           const seat = seatMap.get(playerId);
           if (!seat) return null;
 
+          const taken = gemsByPicker.get(playerId) ?? [];
           const isCurrent = playerId === currentPickerId;
-          const isCompleted =
-            (gemsByPicker.get(playerId)?.length ?? 0) > 0 ||
-            index < currentPickerIndex;
+          const isCompleted = taken.length > 0 || index < currentPickerIndex;
 
           return (
-            <motion.div
-              key={playerId}
-              layout
-              className={clsx(
-                'flex items-center gap-2 rounded-lg border-2 px-3 py-2 transition-all',
-                isCurrent
-                  ? 'border-amber-400 bg-amber-950/30'
-                  : isCompleted
-                    ? 'border-slate-700 bg-slate-900/40 opacity-50'
-                    : 'border-slate-600 bg-slate-800/40',
-              )}
-            >
-              {/* Order number */}
-              <span
-                className={clsx(
-                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
-                  isCurrent
-                    ? 'bg-amber-400 text-amber-950'
-                    : isCompleted
-                      ? 'bg-slate-700 text-slate-500'
-                      : 'bg-slate-600 text-slate-300',
-                )}
-              >
-                {index + 1}
-              </span>
-
-              {/* Seat badge */}
-              <span
-                className={clsx(
-                  'flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white',
-                  SEAT_BG[(seat.seatNumber - 1) % SEAT_BG.length],
-                )}
-              >
-                {seat.seatNumber}
-              </span>
-
-              {/* Name */}
-              <span className="max-w-[80px] truncate text-sm text-slate-300">
-                {seat.name}
-              </span>
-
-              {/* Completed check */}
-              {isCompleted && !isCurrent && (
-                <svg
-                  className="h-4 w-4 text-slate-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={3}
+            <div key={playerId} className="flex items-center gap-2">
+              {index > 0 && !crowded && (
+                <span
+                  className={clsx(
+                    'text-lg',
+                    isCompleted || isCurrent ? 'text-amber-500/50' : 'text-slate-700',
+                  )}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                  →
+                </span>
               )}
-            </motion.div>
+              <motion.div
+                layout
+                className={clsx(
+                  'flex items-center rounded-xl border',
+                  crowded ? 'gap-1.5 px-2 py-1.5' : 'min-w-[9.5rem] gap-2.5 px-3 py-2.5',
+                  isCurrent
+                    ? 'border-amber-400 bg-amber-950/40 shadow-[0_0_18px_rgba(251,191,36,0.35)]'
+                    : isCompleted
+                      ? 'border-slate-700 bg-slate-900/50'
+                      : 'border-slate-600/80 bg-slate-800/40',
+                )}
+              >
+                <span
+                  className={clsx(
+                    'flex shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                    crowded ? 'h-5 w-5' : 'h-6 w-6',
+                    isCurrent
+                      ? 'bg-amber-400 text-amber-950'
+                      : isCompleted
+                        ? 'bg-slate-700 text-slate-400'
+                        : 'bg-slate-600 text-slate-200',
+                  )}
+                >
+                  {index + 1}
+                </span>
+                <span
+                  className={clsx(
+                    'flex shrink-0 items-center justify-center rounded-full font-bold text-white',
+                    crowded ? 'h-7 w-7 text-xs' : 'h-8 w-8 text-sm',
+                    SEAT_BG[(seat.seatNumber - 1) % SEAT_BG.length],
+                    isCompleted && !isCurrent && 'opacity-70',
+                  )}
+                >
+                  {seat.seatNumber}
+                </span>
+                <div className="min-w-0">
+                  <p
+                    className={clsx(
+                      'truncate font-semibold',
+                      crowded ? 'max-w-[4.5rem] text-xs' : 'max-w-[7rem] text-sm',
+                      isCurrent ? 'text-amber-100' : 'text-slate-200',
+                    )}
+                  >
+                    {seat.name}
+                  </p>
+                  {isCurrent && (
+                    <p className="text-[11px] text-amber-300">选择中</p>
+                  )}
+                </div>
+                {taken.length > 0 ? (
+                  <div className="flex items-center gap-1">
+                    {taken.map((gem) => (
+                      <motion.div
+                        key={gem.id}
+                        layoutId={`gem-${gem.id}`}
+                        initial={{ scale: 0.4, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 220, damping: 16 }}
+                      >
+                        <GemIcon color={gem.color} size={crowded ? 22 : 28} value={gem.value} />
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : null}
+              </motion.div>
+            </div>
           );
         })}
       </motion.div>

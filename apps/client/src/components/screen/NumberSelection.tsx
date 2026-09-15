@@ -29,6 +29,10 @@ export function NumberSelection() {
     : totalSeconds;
 
   const submittedCount = playerSeats.filter((seat) => seat.isReady).length;
+  const count = playerSeats.length;
+  const radius =
+    count <= 4 ? 230 : count === 5 ? 248 : count === 6 ? 262 : 272;
+  const ringSize = count >= 7 ? 128 : 148;
 
   return (
     <motion.div
@@ -50,7 +54,7 @@ export function NumberSelection() {
         <PlayerSeats
           layout="circle"
           showSubmissionStatus
-          radius={210}
+          radius={radius}
           className="h-full"
         />
 
@@ -61,8 +65,8 @@ export function NumberSelection() {
           <CountdownRing
             seconds={remainingSeconds}
             totalSeconds={totalSeconds}
-            size={148}
-            strokeWidth={10}
+            size={ringSize}
+            strokeWidth={count >= 7 ? 8 : 10}
           />
           <p className="mt-2 text-lg text-slate-400">
             <motion.span

@@ -145,10 +145,12 @@ function ConfettiParticles() {
 function ResultCard({
   result,
   compact,
+  dense,
   soleChampion,
 }: {
   result: FinalResult;
   compact?: boolean;
+  dense?: boolean;
   soleChampion: boolean;
 }) {
   const isWinner = result.finalRank === 1;
@@ -162,7 +164,7 @@ function ResultCard({
       initial={compact ? false : undefined}
       className={clsx(
         'relative flex shrink-0 items-center rounded-2xl border-2',
-        compact ? 'gap-3 p-3' : 'gap-4 p-4',
+        dense ? 'gap-2 p-2' : compact ? 'gap-3 p-3' : 'gap-4 p-4',
         isWinner
           ? 'border-amber-400 bg-amber-950/30'
           : 'border-slate-700 bg-slate-800/50',
@@ -170,7 +172,7 @@ function ResultCard({
       )}
     >
       {/* Rank / medal */}
-      <div className={clsx('flex items-center justify-center', compact ? 'w-12' : 'w-16')}>
+      <div className={clsx('flex items-center justify-center', dense ? 'w-10' : compact ? 'w-12' : 'w-16')}>
         {isWinner && !compact ? (
           <motion.span
             className="text-5xl"
@@ -184,7 +186,7 @@ function ResultCard({
             {medal}
           </motion.span>
         ) : medal ? (
-          <span className={compact ? 'text-3xl' : 'text-4xl'}>{medal}</span>
+          <span className={dense ? 'text-2xl' : compact ? 'text-3xl' : 'text-4xl'}>{medal}</span>
         ) : (
           <span className="text-2xl font-bold text-slate-500">
             #{result.finalRank}
@@ -193,9 +195,9 @@ function ResultCard({
       </div>
 
       {/* Player info */}
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3">
-          <p className={clsx(compact ? 'text-xl' : 'text-2xl', 'font-bold', isWinner ? 'text-amber-200' : 'text-slate-200')}>
+          <p className={clsx(dense ? 'text-lg' : compact ? 'text-xl' : 'text-2xl', 'font-bold', isWinner ? 'text-amber-200' : 'text-slate-200')}>
             {result.name}
           </p>
           {isWinner && (
@@ -214,7 +216,7 @@ function ResultCard({
         </div>
 
         {/* Score breakdown */}
-        <div className="mt-2 flex items-center gap-4 text-base">
+        <div className={clsx('flex items-center gap-4', dense ? 'mt-0.5 text-sm' : 'mt-2 text-base')}>
           <div className="flex items-center gap-1">
             <span className="text-slate-500">基础</span>
             <span className="font-bold text-slate-300">{result.baseScore}</span>
@@ -231,16 +233,18 @@ function ResultCard({
           </div>
         </div>
 
-        {/* Mission cards */}
-        <div className="mt-2 flex gap-2">
-          {result.missions.map((mission, i) => (
-            <MissionCard
-              key={`${mission.missionId}-${i}`}
-              mission={mission}
-              delay={baseDelay + 0.3 + i * 0.15}
-            />
-          ))}
-        </div>
+        {/* Mission cards — skip on dense 7–8 player game-over so the list fits a 1080p frame */}
+        {!dense && (
+          <div className="mt-2 flex gap-2">
+            {result.missions.map((mission, i) => (
+              <MissionCard
+                key={`${mission.missionId}-${i}`}
+                mission={mission}
+                delay={baseDelay + 0.3 + i * 0.15}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Total score */}
@@ -249,12 +253,16 @@ function ResultCard({
           className={clsx(
             'font-bold tabular-nums',
             isWinner
-              ? compact
-                ? 'text-4xl text-amber-300'
-                : 'text-6xl text-amber-300'
-              : compact
-                ? 'text-3xl text-slate-100'
-                : 'text-4xl text-slate-100',
+              ? dense
+                ? 'text-3xl text-amber-300'
+                : compact
+                  ? 'text-4xl text-amber-300'
+                  : 'text-6xl text-amber-300'
+              : dense
+                ? 'text-2xl text-slate-100'
+                : compact
+                  ? 'text-3xl text-slate-100'
+                  : 'text-4xl text-slate-100',
           )}
           style={{
             textShadow: isWinner
@@ -285,6 +293,7 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
   }, [finalResults, compact]);
 
   const soleChampion = finalResults.filter((r) => r.finalRank === 1).length === 1;
+  const dense = compact && sorted.length >= 7;
 
   return (
     <motion.div
@@ -292,8 +301,8 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
       initial={compact ? false : 'hidden'}
       animate="visible"
       className={clsx(
-        'flex h-full w-full flex-col items-center gap-4',
-        compact ? 'justify-start overflow-y-auto py-2' : 'justify-center',
+        'flex w-full flex-col items-center gap-4',
+        compact ? 'justify-center py-1' : 'h-full justify-center',
       )}
     >
       {!compact && (
@@ -314,7 +323,7 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
         variants={compact ? undefined : staggerContainer}
         className={clsx(
           'flex w-full max-w-4xl flex-col',
-          compact ? 'gap-2' : 'gap-3',
+          dense ? 'gap-1.5' : compact ? 'gap-2' : 'gap-3',
         )}
       >
         <AnimatePresence>
@@ -323,6 +332,7 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
               key={result.playerId}
               result={result}
               compact={compact}
+              dense={dense}
               soleChampion={soleChampion}
             />
           ))}

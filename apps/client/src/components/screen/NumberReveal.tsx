@@ -62,6 +62,7 @@ export function NumberReveal() {
 
   // Sort players by seat number
   const sorted = [...playerSeats].sort((a, b) => a.seatNumber - b.seatNumber);
+  const dense = sorted.length >= 7;
 
   // Build a map of playerId -> collision group index (for border color)
   const playerCollisionMap = new Map<string, { group: CollisionGroup; index: number }>();
@@ -72,20 +73,26 @@ export function NumberReveal() {
   });
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-8">
+    <div className={clsx(
+      'flex h-full w-full flex-col items-center justify-center',
+      dense ? 'gap-4' : 'gap-8',
+    )}>
       <div className="text-center">
         <h2
-          className="text-5xl font-bold text-violet-300"
+          className={clsx('font-bold text-violet-300', dense ? 'text-4xl' : 'text-5xl')}
           style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
         >
           数字揭晓
         </h2>
-        <p className="mt-2 text-2xl text-slate-400">
+        <p className={clsx('text-slate-400', dense ? 'mt-1 text-xl' : 'mt-2 text-2xl')}>
           看看每位玩家选择了什么数字
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-6">
+      <div className={clsx(
+        'flex flex-wrap items-center justify-center',
+        dense ? 'gap-3' : 'gap-6',
+      )}>
         {sorted.map((seat: PlayerSeat) => {
           const number = revealedNumbers[seat.playerId];
           const collisionInfo = playerCollisionMap.get(seat.playerId);
@@ -117,7 +124,8 @@ export function NumberReveal() {
               initial="hidden"
               animate="visible"
               className={clsx(
-                'flex flex-col items-center gap-3 rounded-2xl border-2 p-5',
+                'flex flex-col items-center rounded-2xl border-2',
+                dense ? 'gap-2 p-3' : 'gap-3 p-5',
                 borderClass,
                 bgClass,
                 isVoided && 'opacity-70',
@@ -146,7 +154,8 @@ export function NumberReveal() {
               {number !== undefined && number !== null ? (
                 <motion.div
                   className={clsx(
-                    'flex h-32 w-32 items-center justify-center rounded-xl text-6xl font-bold',
+                    'flex items-center justify-center rounded-xl font-bold',
+                    dense ? 'h-24 w-24 text-5xl' : 'h-32 w-32 text-6xl',
                     isVoided || isVoidedNumber
                       ? 'bg-red-900/60 text-red-400 line-through'
                       : 'bg-slate-700 text-slate-100',
@@ -160,7 +169,10 @@ export function NumberReveal() {
                   {number}
                 </motion.div>
               ) : (
-                <div className="flex h-32 w-32 items-center justify-center rounded-xl bg-slate-800 text-4xl text-slate-600">
+                <div className={clsx(
+                  'flex items-center justify-center rounded-xl bg-slate-800 text-slate-600',
+                  dense ? 'h-24 w-24 text-3xl' : 'h-32 w-32 text-4xl',
+                )}>
                   ?
                 </div>
               )}

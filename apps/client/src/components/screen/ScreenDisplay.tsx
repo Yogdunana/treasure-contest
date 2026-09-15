@@ -8,14 +8,15 @@
  * - Phase-based content area (large center area)
  * - Queue indicator in corner
  * - Paused overlay when game is paused
- * - QR code overlay during LOBBY and GAME_OVER (for continuous recruitment)
+ * - Join QR rails on both sides during gameplay and GAME_OVER
  *
  * The phase-based content area renders different components based on the
  * current game phase, with smooth AnimatePresence transitions.
  *
- * Note: During LOBBY, the LobbyScreen component renders the QR code as
- * part of its main content.  During GAME_OVER, a floating QR overlay
- * is shown in the corner for next-game recruitment.
+ * Note: During LOBBY, the LobbyScreen component renders a large QR as
+ * part of its main content.  During the match (and GAME_OVER) matching
+ * QR rails sit on the left and right so people on either side of the
+ * hall can scan and queue without covering the board.
  */
 
 import { useEffect, useState } from 'react';
@@ -196,13 +197,14 @@ function PhaseBadge() {
   );
 }
 
-/** Floating QR code overlay for GAME_OVER next-game recruitment. */
-function GameOverQROverlay() {
-  const roomCode = useSocketStore((s) => s.roomCode);
-  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+function useJoinQrDataUrl(roomCode: string | null): string {
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
-    if (!roomCode) return;
+    if (!roomCode) {
+      setQrDataUrl('');
+      return;
+    }
 
     const playUrl = `${window.location.origin}/play/${roomCode}`;
 
@@ -219,51 +221,96 @@ function GameOverQROverlay() {
       .catch(() => setQrDataUrl(''));
   }, [roomCode]);
 
+  return qrDataUrl;
+}
+
+/** Side QR rail so spectators on either aisle can scan and queue. */
+function JoinQRRail({
+  side,
+  forNextGame,
+  roomCode,
+  qrDataUrl,
+}: {
+  side: 'left' | 'right';
+  forNextGame: boolean;
+  roomCode: string | null;
+  qrDataUrl: string;
+}) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 50 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 50 }}
-      transition={{ delay: 1, type: 'spring', stiffness: 100, damping: 14 }}
-      className="absolute bottom-6 right-6 z-20"
+    <motion.aside
+      initial={{ opacity: 0, x: side === 'left' ? -24 : 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: side === 'left' ? -24 : 24 }}
+      transition={{ type: 'spring', stiffness: 120, damping: 16 }}
+      className={clsx(
+        'join-qr-rail relative z-20 flex w-44 shrink-0 items-center justify-center px-3',
+        side === 'left' ? 'pl-4' : 'pr-4',
+      )}
+      data-side={side}
     >
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 backdrop-blur-sm">
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-3 backdrop-blur-sm">
         <p className="mb-2 text-center text-sm text-slate-400">
-          扫码加入下一局
+          {forNextGame ? '扫码加入下一局' : '扫码排队'}
         </p>
         <div className="flex items-center justify-center">
           {qrDataUrl ? (
             <img
               src={qrDataUrl}
               alt="扫码加入房间"
-              className="h-32 w-32 rounded-lg bg-slate-50 p-1"
+              className="h-28 w-28 rounded-lg bg-slate-50 p-1"
             />
           ) : (
-            <div className="flex h-32 w-32 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-500">
+            <div className="flex h-28 w-28 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-500">
               生成中...
             </div>
           )}
         </div>
-        <p className="mt-2 text-center font-mono text-lg font-bold text-violet-300">
+        <p className="mt-2 text-center font-mono text-base font-bold text-violet-300">
           {roomCode ?? '------'}
         </p>
       </div>
-    </motion.div>
+    </motion.aside>
+  );
+}
+
+/** Bottom credit line shown on the projector / TV screen. */
+function CreditLine() {
+  return (
+    <p
+      className="credit credit-slot relative z-[60] flex h-20 shrink-0 items-center justify-center gap-3 border-t border-white/10 bg-black/50 px-8 text-2xl tracking-wide"
+      id="creditLine"
+    >
+      <span className="credit-org ui-copy font-medium text-slate-100" id="creditOrg">
+        深圳北理莫斯科大学计算机协会 · StarByte
+      </span>
+      <span className="credit-role ui-copy text-xl text-slate-400" id="creditSupport">
+        制作
+      </span>
+      <span className="credit-sep text-slate-500">|</span>
+      <span className="credit-league ui-copy font-medium text-slate-100" id="creditLeague">
+        共青团深圳北理莫斯科大学委员会
+      </span>
+      <span className="credit-role ui-copy text-xl text-slate-400" id="creditPresented">
+        监制
+      </span>
+    </p>
   );
 }
 
 export function ScreenDisplay() {
   const phase = useGameStore((s) => s.phase);
-  const effectivePhase = useEffectivePhase();
   const isPaused = phase === 'PAUSED';
+  const roomCode = useSocketStore((s) => s.roomCode);
+  const qrDataUrl = useJoinQrDataUrl(roomCode);
 
-  // Show floating QR overlay during GAME_OVER for next-game recruitment.
-  // During LOBBY, the QR is shown as part of the LobbyScreen content.
-  const showGameOverQR = phase === 'GAME_OVER';
+  // Lobby already has a large QR. During the match (and GAME_OVER) keep
+  // matching rails on both sides so people can scan and queue.
+  const showJoinQR = phase !== 'LOBBY';
+  const forNextGame = phase === 'GAME_OVER';
 
   return (
     <div
-      className="relative h-screen w-screen overflow-hidden text-slate-100"
+      className="relative flex h-screen w-screen flex-col overflow-hidden text-slate-100"
       style={{
         background:
           'radial-gradient(ellipse at top, #1a1a2e 0%, #0f0f1e 50%, #050510 100%)',
@@ -299,7 +346,7 @@ export function ScreenDisplay() {
       </div>
 
       {/* Top header bar */}
-      <header className="relative z-20 flex items-center justify-between px-8 py-4">
+      <header className="relative z-20 flex shrink-0 items-center justify-between px-8 py-4">
         {/* Left: Game title */}
         <motion.h1
           className="text-3xl font-bold text-violet-400"
@@ -326,23 +373,40 @@ export function ScreenDisplay() {
         <RoundDisplay />
       </header>
 
-      {/* Main content area */}
-      <main className="relative z-10 h-[calc(100vh-72px)] overflow-hidden px-8">
-        <div className="h-full w-full">
-          <PhaseContent />
-        </div>
-      </main>
+      {/* Main row: QR | board | QR so 4–8 player layouts never sit under the codes */}
+      <div className="relative z-10 flex min-h-0 flex-1">
+        {showJoinQR && (
+          <JoinQRRail
+            side="left"
+            forNextGame={forNextGame}
+            roomCode={roomCode}
+            qrDataUrl={qrDataUrl}
+          />
+        )}
+
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden px-4">
+          <div className="h-full w-full">
+            <PhaseContent />
+          </div>
+        </main>
+
+        {showJoinQR && (
+          <JoinQRRail
+            side="right"
+            forNextGame={forNextGame}
+            roomCode={roomCode}
+            qrDataUrl={qrDataUrl}
+          />
+        )}
+      </div>
+
+      <CreditLine />
 
       {/* Queue indicator (top-right corner) */}
       <QueueIndicator />
 
       {/* Paused overlay */}
       <AnimatePresence>{isPaused && <PausedOverlay />}</AnimatePresence>
-
-      {/* Floating QR overlay during GAME_OVER for next-game recruitment */}
-      <AnimatePresence>
-        {showGameOverQR && <GameOverQROverlay />}
-      </AnimatePresence>
     </div>
   );
 }
