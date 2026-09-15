@@ -225,7 +225,7 @@ function GameOverQROverlay() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 50 }}
       transition={{ delay: 1, type: 'spring', stiffness: 100, damping: 14 }}
-      className="absolute bottom-6 right-6 z-20"
+      className="absolute bottom-16 right-6 z-20"
     >
       <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 backdrop-blur-sm">
         <p className="mb-2 text-center text-sm text-slate-400">
@@ -252,9 +252,32 @@ function GameOverQROverlay() {
   );
 }
 
+/** Bottom credit line shown on the projector / TV screen. */
+function CreditLine() {
+  return (
+    <p
+      className="credit credit-slot relative z-[60] flex h-11 shrink-0 items-center justify-center gap-2 border-t border-white/5 bg-black/40 px-8 text-sm tracking-wide"
+      id="creditLine"
+    >
+      <span className="credit-org ui-copy text-slate-300" id="creditOrg">
+        深圳北理莫斯科大学计算机协会 · StarByte
+      </span>
+      <span className="credit-role ui-copy text-slate-500" id="creditSupport">
+        制作
+      </span>
+      <span className="credit-sep text-slate-600">|</span>
+      <span className="credit-league ui-copy text-slate-300" id="creditLeague">
+        共青团深圳北理莫斯科大学委员会
+      </span>
+      <span className="credit-role ui-copy text-slate-500" id="creditPresented">
+        监制
+      </span>
+    </p>
+  );
+}
+
 export function ScreenDisplay() {
   const phase = useGameStore((s) => s.phase);
-  const effectivePhase = useEffectivePhase();
   const isPaused = phase === 'PAUSED';
 
   // Show floating QR overlay during GAME_OVER for next-game recruitment.
@@ -263,7 +286,7 @@ export function ScreenDisplay() {
 
   return (
     <div
-      className="relative h-screen w-screen overflow-hidden text-slate-100"
+      className="relative flex h-screen w-screen flex-col overflow-hidden text-slate-100"
       style={{
         background:
           'radial-gradient(ellipse at top, #1a1a2e 0%, #0f0f1e 50%, #050510 100%)',
@@ -299,7 +322,7 @@ export function ScreenDisplay() {
       </div>
 
       {/* Top header bar */}
-      <header className="relative z-20 flex items-center justify-between px-8 py-4">
+      <header className="relative z-20 flex shrink-0 items-center justify-between px-8 py-4">
         {/* Left: Game title */}
         <motion.h1
           className="text-3xl font-bold text-violet-400"
@@ -327,11 +350,13 @@ export function ScreenDisplay() {
       </header>
 
       {/* Main content area */}
-      <main className="relative z-10 h-[calc(100vh-72px)] overflow-hidden px-8">
+      <main className="relative z-10 min-h-0 flex-1 overflow-hidden px-8">
         <div className="h-full w-full">
           <PhaseContent />
         </div>
       </main>
+
+      <CreditLine />
 
       {/* Queue indicator (top-right corner) */}
       <QueueIndicator />
