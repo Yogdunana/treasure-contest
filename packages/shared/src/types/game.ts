@@ -265,6 +265,9 @@ export interface PublicGameState {
 
   // Final results (null until RESULTS_REVEAL)
   finalResults: FinalResult[] | null;
+
+  /** Host-configured seat target (4–8). Used by lobby / QR / queue UI. */
+  targetPlayers: number;
 }
 
 /**
@@ -282,6 +285,8 @@ export interface PlayerPrivateState {
   colorBonuses: ColorBonus[];
   finalScore: number | null;
   finalRank: number | null;
+  /** Present after join/restart so the client can persist a current-session token. */
+  authToken?: string;
 }
 
 /**

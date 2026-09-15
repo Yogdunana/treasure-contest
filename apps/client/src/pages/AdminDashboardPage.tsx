@@ -40,13 +40,16 @@ interface GamePlayerMission {
 interface GamePlayer {
   name: string;
   finalScore: number;
-  finalRank: number;
+  finalRank: number | null;
   missions: GamePlayerMission[];
 }
 
 interface GameRecord {
   gameSession: number;
   roomCode: string;
+  hostName?: string;
+  phase?: string;
+  targetPlayers?: number;
   startTime: string;
   endTime: string;
   duration: number;
@@ -137,7 +140,7 @@ function difficultyBadgeClass(difficulty: string): string {
 }
 
 /** Tailwind classes for rank medal. */
-function rankBadgeClass(rank: number): string {
+function rankBadgeClass(rank: number | null): string {
   switch (rank) {
     case 1:
       return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
@@ -151,10 +154,11 @@ function rankBadgeClass(rank: number): string {
 }
 
 /** Count completed missions out of total. */
-function countCompletedMissions(missions: GamePlayerMission[]): { completed: number; total: number } {
+function countCompletedMissions(missions: GamePlayerMission[] | undefined): { completed: number; total: number } {
+  const list = missions ?? [];
   return {
-    completed: missions.filter((m) => m.completed).length,
-    total: missions.length,
+    completed: list.filter((m) => m.completed).length,
+    total: list.length,
   };
 }
 
@@ -488,7 +492,7 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   // ── UI state ───────────────────────────────────────────────────────────
-  const [expandedSession, setExpandedSession] = useState<number | null>(null);
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [missionSortKey, setMissionSortKey] = useState<MissionSortKey>('completionRate');
   const [missionSortDir, setMissionSortDir] = useState<SortDir>('desc');
   const [playerSortKey, setPlayerSortKey] = useState<PlayerSortKey>('totalScore');
@@ -540,8 +544,10 @@ export default function AdminDashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (authed) {
+      fetchData();
+    }
+  }, [authed, fetchData]);
 
   // ── CSV export ─────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
@@ -604,7 +610,7 @@ export default function AdminDashboardPage() {
   );
 
   // ── Expand/collapse game record ────────────────────────────────────────
-  const toggleExpand = useCallback((session: number) => {
+  const toggleExpand = useCallback((session: string) => {
     setExpandedSession((prev) => (prev === session ? null : session));
   }, []);
 
@@ -788,19 +794,19 @@ export default function AdminDashboardPage() {
           ) : (
             <div className="space-y-2">
               {games.map((game) => {
-                const isExpanded = expandedSession === game.gameSession;
+                const isExpanded = expandedSession === `${game.roomCode}:${game.gameSession}`;
                 const rankedPlayers = [...game.players].sort(
-                  (a, b) => a.finalRank - b.finalRank,
+                  (a, b) => (a.finalRank ?? 999) - (b.finalRank ?? 999),
                 );
 
                 return (
                   <div
-                    key={game.gameSession}
+                    key={`${game.roomCode}:${game.gameSession}`}
                     className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60"
                   >
                     {/* Summary row */}
                     <button
-                      onClick={() => toggleExpand(game.gameSession)}
+                      onClick={() => toggleExpand(`${game.roomCode}:${game.gameSession}`)}
                       className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-4">
@@ -814,15 +820,18 @@ export default function AdminDashboardPage() {
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">时间 </span>
-                            {formatTime(game.startTime)} - {formatTime(game.endTime)}
+                            {game.phase === 'GAME_OVER'
+                              ? `${formatTime(game.startTime)} - ${formatTime(game.endTime)}`
+                              : `${formatTime(game.startTime)} 起`}
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">时长 </span>
-                            {formatDuration(game.duration)}
+                            {game.phase === 'GAME_OVER' ? formatDuration(game.duration) : '进行中'}
                           </span>
                           <span className="text-slate-300">
                             <span className="text-slate-500">人数 </span>
                             {game.playerCount}
+                            {game.targetPlayers ? `/${game.targetPlayers}` : ''}
                           </span>
                         </div>
                       </div>
@@ -869,7 +878,7 @@ export default function AdminDashboardPage() {
                                             rankBadgeClass(player.finalRank),
                                           )}
                                         >
-                                          {player.finalRank}
+                                          {player.finalRank ?? '—'}
                                         </span>
                                       </td>
                                       <td className="px-3 py-2 font-medium text-slate-200">

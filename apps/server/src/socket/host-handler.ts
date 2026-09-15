@@ -494,12 +494,12 @@ function handlePromotePlayer(
     queueEntryId,
   });
 
-  // Only allow promotion during LOBBY or GAME_OVER
-  if (room.phase !== 'LOBBY' && room.phase !== 'GAME_OVER') {
+  // Only allow promotion during LOBBY (GAME_OVER seats are locked until restart)
+  if (room.phase !== 'LOBBY') {
     broadcaster.sendError(
       socket,
       'INVALID_ACTION',
-      'Can only promote players during LOBBY or GAME_OVER phase',
+      'Can only promote players during LOBBY phase',
     );
     return;
   }
@@ -527,7 +527,7 @@ function handlePromotePlayer(
 
   if (!result) {
     broadcaster.sendError(socket, 'INVALID_ACTION', 'Failed to create player from queue entry');
-    // Re-add to queue?
+    queueManager.requeueAtFront(room, entry);
     return;
   }
 
@@ -551,6 +551,10 @@ function handlePromotePlayer(
       authToken: result.authToken,
       seatNumber: result.player.seatNumber,
     });
+    const promotedSocket = io.sockets.sockets.get(entry.socketId);
+    if (promotedSocket) {
+      broadcaster.sendSnapshot(promotedSocket, room);
+    }
   }
 
   // Notify the room
@@ -648,28 +652,22 @@ function handleEndGame(
 
   logger.info('host:end_game', { room: room.code, phase: room.phase });
 
-  // Clear all timers for the room
+  const engine = roomManager.getEngine(room.code);
+  if (engine) {
+    engine.endGameNow();
+    return;
+  }
+
   const timerManager = roomManager.getTimerManager(room.code);
   if (timerManager) {
     timerManager.clearAll();
   }
-
-  // Transition to GAME_OVER
   room.phase = 'GAME_OVER';
   room.isPaused = false;
   room.pausedPhase = null;
   room.timerRemaining = 0;
   room.timerDeadline = null;
-
-  // If final results haven't been calculated, do a quick calculation
-  if (room.finalResults.length === 0) {
-    // Set revealedResultsCount to 0 since there are no results
-    room.revealedResultsCount = 0;
-  } else {
-    room.revealedResultsCount = room.finalResults.length;
-  }
-
-  // Update DB
+  room.revealedResultsCount = room.finalResults.length;
   try {
     roomRepo.updateRoom(room.code, {
       phase: 'GAME_OVER',
@@ -681,8 +679,6 @@ function handleEndGame(
   } catch (err) {
     logger.error('Failed to update room phase in DB', { error: err });
   }
-
-  // Broadcast final state
   broadcaster.broadcast(room);
 }
 

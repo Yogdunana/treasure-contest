@@ -104,16 +104,17 @@ export function getHistoryByRoomAndEvent(roomCode: string, eventType: string): G
 }
 
 /**
- * Count how many games were played today (based on `game_end` events).
+ * Count rooms created today. Matches the admin "每局记录" list, which includes
+ * in-progress lobbies — counting only `game_end` made 今日场次 stay at 0
+ * while the list already showed today's rooms.
  */
 export function getTodayGameCount(): number {
   const db = getDb();
   const row = db
     .prepare(
       `SELECT COUNT(*) AS cnt
-       FROM game_history
-       WHERE event_type = 'game_end'
-         AND DATE(created_at) = DATE('now')`,
+       FROM rooms
+       WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
   return row.cnt;
@@ -137,7 +138,7 @@ export function getTodayStats(): TodayStats {
       `SELECT COUNT(*) AS cnt
        FROM game_history
        WHERE event_type = 'game_end'
-         AND DATE(created_at) = DATE('now')`,
+         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 
@@ -146,7 +147,7 @@ export function getTodayStats(): TodayStats {
       `SELECT COUNT(DISTINCT player_id) AS cnt
        FROM game_history
        WHERE player_id IS NOT NULL
-         AND DATE(created_at) = DATE('now')`,
+         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 
@@ -154,7 +155,7 @@ export function getTodayStats(): TodayStats {
     .prepare(
       `SELECT COUNT(*) AS cnt
        FROM game_history
-       WHERE DATE(created_at) = DATE('now')`,
+       WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
     )
     .get() as { cnt: number };
 

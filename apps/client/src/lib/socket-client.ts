@@ -45,6 +45,7 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
   {
     autoConnect: false,
     transports: ['websocket', 'polling'],
+    withCredentials: true,
     reconnection: true,
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,

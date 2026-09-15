@@ -16,13 +16,15 @@ function getMissionBonusByDifficulty(
  * Tiebreaker key used for comparing two players.
  */
 interface TiebreakerKey {
-  /** Criterion 1: higher base score ranks higher. */
+  /** Primary rank key: higher total score ranks higher. */
+  finalScore: number;
+  /** Tiebreaker 1: higher base score ranks higher. */
   baseScore: number;
-  /** Criterion 2: higher hard mission bonus ranks higher. */
+  /** Tiebreaker 2: higher hard mission bonus ranks higher. */
   hardBonus: number;
-  /** Criterion 3: higher medium mission bonus ranks higher. */
+  /** Tiebreaker 3: higher medium mission bonus ranks higher. */
   mediumBonus: number;
-  /** Criterion 4: more total gems ranks higher. */
+  /** Tiebreaker 4: more total gems ranks higher. */
   totalGems: number;
 }
 
@@ -31,6 +33,7 @@ interface TiebreakerKey {
  */
 function buildKey(result: FinalResult): TiebreakerKey {
   return {
+    finalScore: result.finalScore,
     baseScore: result.baseScore,
     hardBonus: getMissionBonusByDifficulty(result.missions, 'hard'),
     mediumBonus: getMissionBonusByDifficulty(result.missions, 'medium'),
@@ -43,6 +46,7 @@ function buildKey(result: FinalResult): TiebreakerKey {
  */
 function keysEqual(a: TiebreakerKey, b: TiebreakerKey): boolean {
   return (
+    a.finalScore === b.finalScore &&
     a.baseScore === b.baseScore &&
     a.hardBonus === b.hardBonus &&
     a.mediumBonus === b.mediumBonus &&
@@ -53,7 +57,7 @@ function keysEqual(a: TiebreakerKey, b: TiebreakerKey): boolean {
 /**
  * Resolve ties in final ranking and assign final ranks.
  *
- * Tiebreaker criteria (in order, all "higher is better"):
+ * Primary ranking is by total score. Remaining criteria break ties:
  * 1. Higher base score.
  * 2. Higher hard mission bonus.
  * 3. Higher medium mission bonus.
@@ -76,6 +80,9 @@ export function resolveTies(results: FinalResult[]): FinalResult[] {
 
   // Sort by tiebreaker criteria (all descending)
   entries.sort((a, b) => {
+    if (b.key.finalScore !== a.key.finalScore) {
+      return b.key.finalScore - a.key.finalScore;
+    }
     if (b.key.baseScore !== a.key.baseScore) {
       return b.key.baseScore - a.key.baseScore;
     }

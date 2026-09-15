@@ -47,12 +47,41 @@ export type ClientRole = 'player' | 'screen' | 'host';
 // Client-to-Server Event Payloads
 // ============================================================================
 
-/** `room:join` - Player or screen joins a room */
+/** `room:join` - Player, screen, or host joins a room */
 export interface RoomJoinPayload {
   roomCode: string;
   playerName: string;
   role: ClientRole;
   fingerprint?: string;
+  /** Host token (required when role is `host`; also accepted via handshake.auth). */
+  hostToken?: string;
+}
+
+/** Acknowledgement after `room:join` / reconnect events */
+export interface RoomJoinAck {
+  success: boolean;
+  roomCode?: string;
+  playerId?: string;
+  authToken?: string;
+  seatNumber?: number;
+  hostToken?: string;
+  queued?: boolean;
+  queuePosition?: number;
+  /**
+   * Full role-filtered snapshot at join time.
+   * Screen refresh applies this immediately so a missed `state:sync`
+   * cannot leave the projector on an empty lobby.
+   */
+  snapshot?: StateSnapshot;
+  error?: { code: string; message: string };
+}
+
+/** Acknowledgement after `host:create_room` */
+export interface CreateRoomAck {
+  success: boolean;
+  roomCode?: string;
+  hostToken?: string;
+  error?: { code: ErrorCode; message: string };
 }
 
 /** `room:reconnect` - Layer 1 reconnect via localStorage token */
@@ -178,19 +207,29 @@ export interface ErrorPayload {
  * Events without payloads use `() => void`.
  */
 export interface ClientToServerEvents {
-  'room:join': (payload: RoomJoinPayload) => void;
-  'room:reconnect': (payload: RoomReconnectPayload) => void;
-  'room:reconnect_by_cookie': (payload: RoomReconnectByCookiePayload) => void;
+  'room:join': (payload: RoomJoinPayload, callback?: (response: RoomJoinAck) => void) => void;
+  'room:reconnect': (payload: RoomReconnectPayload, callback?: (response: RoomJoinAck) => void) => void;
+  'room:reconnect_by_cookie': (
+    payload: RoomReconnectByCookiePayload,
+    callback?: (response: RoomJoinAck) => void,
+  ) => void;
   'room:reconnect_by_fingerprint': (
     payload: RoomReconnectByFingerprintPayload,
+    callback?: (response: RoomJoinAck) => void,
   ) => void;
-  'room:reconnect_by_name': (payload: RoomReconnectByNamePayload) => void;
+  'room:reconnect_by_name': (
+    payload: RoomReconnectByNamePayload,
+    callback?: (response: RoomJoinAck) => void,
+  ) => void;
   'room:leave': () => void;
   'queue:join': (payload: QueueJoinPayload) => void;
   'queue:leave': () => void;
   'action:submit_number': (payload: SubmitNumberPayload) => void;
   'action:select_gem': (payload: SelectGemPayload) => void;
-  'host:create_room': (payload: CreateRoomPayload) => void;
+  'host:create_room': (
+    payload: CreateRoomPayload,
+    callback?: (response: CreateRoomAck) => void,
+  ) => void;
   'host:start_game': () => void;
   'host:pause': () => void;
   'host:resume': () => void;

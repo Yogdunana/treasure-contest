@@ -22,8 +22,6 @@ import { useGameStore } from '../../store/game-store';
 import { useSocketStore } from '../../store/socket-store';
 import {
   MIN_PLAYERS,
-  DEFAULT_TARGET_PLAYERS,
-  MAX_PLAYERS,
 } from '@treasure-contest/shared';
 import {
   fadeIn,
@@ -48,11 +46,12 @@ export function LobbyScreen() {
   const roomCode = useSocketStore((s) => s.roomCode);
   const playerSeats = useGameStore((s) => s.playerSeats);
   const queueCount = useGameStore((s) => s.queueCount);
+  const targetPlayers = useGameStore((s) => s.targetPlayers);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   const playerCount = playerSeats.length;
-  const targetPlayers = DEFAULT_TARGET_PLAYERS;
   const hasEnough = playerCount >= MIN_PLAYERS;
+  const isFull = playerCount >= targetPlayers;
 
   // Generate QR code from the player join URL
   useEffect(() => {
@@ -154,9 +153,13 @@ export function LobbyScreen() {
             <span className="text-2xl text-slate-400">人</span>
           </div>
 
-          {hasEnough ? (
+          {isFull ? (
             <span className="rounded-full bg-emerald-900/50 px-4 py-1.5 text-base font-semibold text-emerald-400">
-              人数达标
+              满员
+            </span>
+          ) : hasEnough ? (
+            <span className="rounded-full bg-emerald-900/50 px-4 py-1.5 text-base font-semibold text-emerald-400">
+              可开始
             </span>
           ) : (
             <span className="rounded-full bg-amber-900/50 px-4 py-1.5 text-base font-semibold text-amber-400">
@@ -179,12 +182,11 @@ export function LobbyScreen() {
           </motion.div>
         )}
 
-        {/* Player list */}
-        {sorted.length > 0 && (
-          <motion.div
-            variants={staggerContainer}
-            className="grid grid-cols-2 gap-3"
-          >
+        {/* Player list + empty target seats */}
+        <motion.div
+          variants={staggerContainer}
+          className="grid grid-cols-2 gap-3"
+        >
             {sorted.map((seat) => (
               <motion.div
                 key={seat.playerId}
@@ -225,8 +227,7 @@ export function LobbyScreen() {
               </motion.div>
             ))}
 
-            {/* Empty slots */}
-            {Array.from({ length: Math.max(0, MAX_PLAYERS - sorted.length) }).map(
+            {Array.from({ length: Math.max(0, targetPlayers - sorted.length) }).map(
               (_, i) => (
                 <div
                   key={`empty-${i}`}
@@ -239,8 +240,7 @@ export function LobbyScreen() {
                 </div>
               ),
             )}
-          </motion.div>
-        )}
+        </motion.div>
 
         {/* Waiting message */}
         <motion.div

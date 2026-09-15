@@ -10,14 +10,17 @@ import { TOTAL_ROUNDS } from '@treasure-contest/shared';
 
 export function RoundIndicator() {
   const currentRound = useGameStore((s) => s.currentRound);
+  const phase = useGameStore((s) => s.phase);
+  const notStarted =
+    currentRound <= 0 || phase === 'LOBBY' || phase === 'GAME_INIT';
   const displayRound = currentRound > 0 ? currentRound : 0;
-  const progress = currentRound > 0 ? (currentRound / TOTAL_ROUNDS) * 100 : 0;
+  const progress = notStarted ? 0 : (currentRound / TOTAL_ROUNDS) * 100;
 
   return (
     <div className="w-full">
       <div className="mb-1.5 flex items-center justify-between">
         <span className="text-sm font-semibold text-slate-200">
-          第 {displayRound} 轮
+          {notStarted ? '等待开始' : `第 ${displayRound} 轮`}
         </span>
         <span className="text-xs text-slate-500">
           共 {TOTAL_ROUNDS} 轮

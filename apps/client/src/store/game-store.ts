@@ -12,7 +12,9 @@
  */
 
 import { create } from 'zustand';
+import { DEFAULT_TARGET_PLAYERS } from '@treasure-contest/shared';
 import type {
+  ClientRole,
   GamePhase,
   Gem,
   CollisionGroup,
@@ -47,6 +49,12 @@ export interface GameStore {
   timer: TimerInfo | null;
   queueCount: number;
   finalResults: FinalResult[];
+  /** Host-configured seat target for this room (not the default 6). */
+  targetPlayers: number;
+  /** Seated players (queued snapshots do not include playerSeats). */
+  seatedCount: number;
+  isPaused: boolean;
+  pausedPhase: GamePhase | null;
 
   // ── Private state (player only) ───────────────────────────────────────
   playerId: string | null;
@@ -69,6 +77,10 @@ export interface GameStore {
   // ── Queue state (queued players) ──────────────────────────────────────
   queuePosition: number | null;
   totalInQueue: number | null;
+
+  // ── Last snapshot identity (used by screen/host to know we actually joined)
+  snapshotRole: ClientRole | 'queued' | null;
+  snapshotRoomCode: string | null;
 
   // ── Actions ────────────────────────────────────────────────────────────
   setSnapshot: (snapshot: StateSnapshot) => void;
@@ -94,6 +106,10 @@ const initialState = {
   timer: null as TimerInfo | null,
   queueCount: 0,
   finalResults: [] as FinalResult[],
+  targetPlayers: DEFAULT_TARGET_PLAYERS,
+  seatedCount: 0,
+  isPaused: false,
+  pausedPhase: null as GamePhase | null,
 
   // Private
   playerId: null as string | null,
@@ -116,6 +132,9 @@ const initialState = {
   // Queue
   queuePosition: null as number | null,
   totalInQueue: null as number | null,
+
+  snapshotRole: null as ClientRole | 'queued' | null,
+  snapshotRoomCode: null as string | null,
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +175,10 @@ function extractPublicState(pgs: PublicGameState) {
     timer: pgs.timer,
     queueCount: pgs.queueCount,
     finalResults: pgs.finalResults ?? [],
+    targetPlayers: pgs.targetPlayers || DEFAULT_TARGET_PLAYERS,
+    seatedCount: pgs.playerSeats.length,
+    isPaused: pgs.isPaused,
+    pausedPhase: pgs.pausedPhase,
   };
 }
 
@@ -167,12 +190,18 @@ export const useGameStore = create<GameStore>((set) => ({
   ...initialState,
 
   setSnapshot: (snapshot) => {
+    const identity = {
+      snapshotRole: snapshot.role,
+      snapshotRoomCode: snapshot.roomCode,
+    };
+
     switch (snapshot.role) {
       // ── Player snapshot ──────────────────────────────────────────────
       case 'player': {
         const pub = extractPublicState(snapshot.publicGameState);
         const priv = snapshot.privateState;
         set({
+          ...identity,
           ...pub,
           playerId: priv.playerId,
           availableNumbers: priv.availableNumbers,
@@ -191,7 +220,7 @@ export const useGameStore = create<GameStore>((set) => ({
       // ── Screen snapshot ─────────────────────────────────────────────
       case 'screen': {
         const pub = extractPublicState(snapshot.publicGameState);
-        set(pub);
+        set({ ...identity, ...pub });
         break;
       }
 
@@ -200,6 +229,7 @@ export const useGameStore = create<GameStore>((set) => ({
         const pub = extractPublicState(snapshot.publicGameState);
         const host = snapshot.hostState;
         set({
+          ...identity,
           ...pub,
           allPlayers: host.allPlayers,
           queueList: host.queueList,
@@ -212,10 +242,13 @@ export const useGameStore = create<GameStore>((set) => ({
       case 'queued': {
         const qs = snapshot.queueState;
         set({
+          ...identity,
           phase: qs.currentPhase,
           queuePosition: qs.position,
           totalInQueue: qs.totalInQueue,
-          queueCount: qs.playerCount,
+          queueCount: qs.totalInQueue,
+          targetPlayers: qs.targetPlayers || DEFAULT_TARGET_PLAYERS,
+          seatedCount: qs.playerCount,
           currentRound: 0,
         });
         break;

@@ -39,6 +39,8 @@ export function FinalResults() {
 
   const isGameOver = useGameStore((s) => s.phase) === 'GAME_OVER';
 
+  const tiedForFirst = sorted.filter((r) => r.finalRank === 1).length > 1;
+
   return (
     <motion.div
       variants={staggerContainer}
@@ -88,6 +90,11 @@ export function FinalResults() {
               >
                 {result.name}
                 {isMe && ' (我)'}
+                {isWinner && (
+                  <span className="ml-1 text-[10px] text-amber-400">
+                    {tiedForFirst ? '并列冠军' : '冠军'}
+                  </span>
+                )}
               </p>
               <div className="flex gap-2 text-[10px] text-slate-500">
                 <span>基础 {result.baseScore}</span>

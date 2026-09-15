@@ -9,20 +9,18 @@
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../store/game-store';
 import { PlayerAvatar } from '../shared/PlayerAvatar';
-import {
-  MIN_PLAYERS,
-  DEFAULT_TARGET_PLAYERS,
-} from '@treasure-contest/shared';
+import { MIN_PLAYERS } from '@treasure-contest/shared';
 import { fadeIn, staggerContainer, slideIn } from '../../animations/variants';
 
 export function WaitingRoom() {
   const playerSeats = useGameStore((s) => s.playerSeats);
   const myPlayerId = useGameStore((s) => s.playerId);
   const queueCount = useGameStore((s) => s.queueCount);
+  const targetPlayers = useGameStore((s) => s.targetPlayers);
 
   const playerCount = playerSeats.length;
-  const targetPlayers = DEFAULT_TARGET_PLAYERS;
   const hasEnough = playerCount >= MIN_PLAYERS;
+  const isFull = playerCount >= targetPlayers;
 
   return (
     <motion.div
@@ -69,9 +67,13 @@ export function WaitingRoom() {
         <span className="text-sm text-slate-300">
           已加入: {playerCount} / {targetPlayers}
         </span>
-        {hasEnough ? (
+        {isFull ? (
           <span className="rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] text-emerald-400">
-            人数达标
+            满员
+          </span>
+        ) : hasEnough ? (
+          <span className="rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] text-emerald-400">
+            可开始
           </span>
         ) : (
           <span className="rounded-full bg-amber-900/50 px-2 py-0.5 text-[10px] text-amber-400">

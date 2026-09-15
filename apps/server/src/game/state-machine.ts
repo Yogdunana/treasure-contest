@@ -142,6 +142,9 @@ export function startNumberSelection(room: Room): void {
   if (validatePhase(room.phase, 'GEM_REVEAL')) {
     room.phase = 'NUMBER_SELECTION';
   }
+  for (const player of room.players.values()) {
+    player.isReady = false;
+  }
 }
 
 /**
@@ -195,6 +198,9 @@ export function submitNumber(
   player.availableNumbers = player.availableNumbers.filter((n) => n !== number);
   player.usedNumbers = [...player.usedNumbers, number];
   player.roundSubmission = number;
+  // Public seats expose isReady as "has submitted this round" so the
+  // big screen can count locks without revealing the chosen number.
+  player.isReady = true;
 
   return { success: true };
 }
@@ -209,12 +215,31 @@ export function checkAllSubmitted(room: Room): boolean {
 }
 
 /**
+ * Consume the lowest remaining number for a player who has not submitted.
+ */
+function autoSubmitLowestNumber(player: Player): void {
+  if (player.roundSubmission !== null) return;
+  if (player.availableNumbers.length === 0) return;
+  const lowest = Math.min(...player.availableNumbers);
+  player.availableNumbers = player.availableNumbers.filter((n) => n !== lowest);
+  player.usedNumbers = [...player.usedNumbers, lowest];
+  player.roundSubmission = lowest;
+  player.isReady = true;
+}
+
+/**
  * Transition from NUMBER_SELECTION to NUMBER_REVEAL.
  *
  * Populates revealedNumbers with all submitted numbers.
  */
 export function revealNumbers(room: Room): void {
   if (!validatePhase(room.phase, 'NUMBER_SELECTION')) return;
+
+  // Timeout / AFK / disconnect: anyone who did not pick still consumes
+  // their lowest remaining number so sitting out is not an advantage.
+  for (const player of room.players.values()) {
+    autoSubmitLowestNumber(player);
+  }
 
   // Build revealed numbers from all players who submitted
   room.revealedNumbers = [];
@@ -430,17 +455,18 @@ export function calculateFinalScores(room: Room): void {
 
   const players = Array.from(room.players.values());
 
-  // Iterative approach for H09 (which depends on final rank)
+  // Iterative approach for H09 (which depends on final rank).
+  // Pass 1 scores with finalRank = null (H09 always false).
+  // Pass 2+ re-check with preliminary ranks so H09 can complete.
   let stable = false;
   let iterations = 0;
   const maxIterations = 3;
 
   while (!stable && iterations < maxIterations) {
-    stable = true;
     iterations++;
 
     const finalRanksMap = new Map<string, number>();
-    if (iterations > 1 && room.finalResults.length > 0) {
+    if (room.finalResults.length > 0) {
       for (const result of room.finalResults) {
         finalRanksMap.set(result.playerId, result.finalRank);
       }
@@ -476,8 +502,10 @@ export function calculateFinalScores(room: Room): void {
     // Resolve ties and assign ranks
     const ranked = resolveTies(results);
 
-    // Check if H09 status changed (which depends on finalRank)
-    if (iterations > 1) {
+    // Always run at least two passes so H09 sees preliminary ranks.
+    // On later passes, stop when no H09 completion status flipped.
+    stable = iterations >= 2;
+    if (iterations >= 2) {
       for (const result of ranked) {
         const player = room.players.get(result.playerId);
         if (!player) continue;

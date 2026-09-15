@@ -75,9 +75,16 @@ function PhaseTransition({ label }: { label: string }) {
   );
 }
 
+/** Phase the big screen should render; while paused keep the frozen scene. */
+function useEffectivePhase(): GamePhase {
+  const phase = useGameStore((s) => s.phase);
+  const pausedPhase = useGameStore((s) => s.pausedPhase);
+  return phase === 'PAUSED' && pausedPhase ? pausedPhase : phase;
+}
+
 /** Renders the phase-specific content. */
 function PhaseContent() {
-  const phase = useGameStore((s) => s.phase);
+  const phase = useEffectivePhase();
 
   switch (phase) {
     case 'LOBBY':
@@ -247,6 +254,7 @@ function GameOverQROverlay() {
 
 export function ScreenDisplay() {
   const phase = useGameStore((s) => s.phase);
+  const effectivePhase = useEffectivePhase();
   const isPaused = phase === 'PAUSED';
 
   // Show floating QR overlay during GAME_OVER for next-game recruitment.
@@ -319,19 +327,10 @@ export function ScreenDisplay() {
       </header>
 
       {/* Main content area */}
-      <main className="relative z-10 flex h-[calc(100vh-72px)] items-center justify-center px-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={phase}
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="h-full w-full"
-          >
-            <PhaseContent />
-          </motion.div>
-        </AnimatePresence>
+      <main className="relative z-10 h-[calc(100vh-72px)] overflow-hidden px-8">
+        <div className="h-full w-full">
+          <PhaseContent />
+        </div>
       </main>
 
       {/* Queue indicator (top-right corner) */}

@@ -142,28 +142,36 @@ function ConfettiParticles() {
 }
 
 /** Renders a single player's result card. */
-function ResultCard({ result }: { result: FinalResult }) {
+function ResultCard({
+  result,
+  compact,
+  soleChampion,
+}: {
+  result: FinalResult;
+  compact?: boolean;
+  soleChampion: boolean;
+}) {
   const isWinner = result.finalRank === 1;
   const medal = RANK_MEDALS[result.finalRank] ?? '';
   const baseDelay = (result.finalRank - 1) * (TIMING_CONFIG.FINAL_REVEAL_INTERVAL_MS / 1000);
+  const emphasize = isWinner && soleChampion && !compact;
 
   return (
     <motion.div
-      variants={isWinner ? championEffect : slideIn}
+      variants={emphasize ? championEffect : compact ? undefined : slideIn}
+      initial={compact ? false : undefined}
       className={clsx(
-        'relative flex items-center gap-4 rounded-2xl border-2 p-4',
+        'relative flex shrink-0 items-center rounded-2xl border-2',
+        compact ? 'gap-3 p-3' : 'gap-4 p-4',
         isWinner
           ? 'border-amber-400 bg-amber-950/30'
           : 'border-slate-700 bg-slate-800/50',
-        isWinner && 'champion-glow',
+        emphasize && 'champion-glow',
       )}
-      style={{
-        transform: isWinner ? 'scale(1.05)' : undefined,
-      }}
     >
       {/* Rank / medal */}
-      <div className="flex w-16 items-center justify-center">
-        {isWinner ? (
+      <div className={clsx('flex items-center justify-center', compact ? 'w-12' : 'w-16')}>
+        {isWinner && !compact ? (
           <motion.span
             className="text-5xl"
             animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
@@ -176,7 +184,7 @@ function ResultCard({ result }: { result: FinalResult }) {
             {medal}
           </motion.span>
         ) : medal ? (
-          <span className="text-4xl">{medal}</span>
+          <span className={compact ? 'text-3xl' : 'text-4xl'}>{medal}</span>
         ) : (
           <span className="text-2xl font-bold text-slate-500">
             #{result.finalRank}
@@ -187,20 +195,20 @@ function ResultCard({ result }: { result: FinalResult }) {
       {/* Player info */}
       <div className="flex-1">
         <div className="flex items-center gap-3">
-          <p className={clsx('text-2xl font-bold', isWinner ? 'text-amber-200' : 'text-slate-200')}>
+          <p className={clsx(compact ? 'text-xl' : 'text-2xl', 'font-bold', isWinner ? 'text-amber-200' : 'text-slate-200')}>
             {result.name}
           </p>
           {isWinner && (
             <motion.span
               className="rounded-full bg-amber-400 px-3 py-0.5 text-sm font-bold text-amber-950"
-              animate={{ scale: [1, 1.1, 1] }}
+              animate={compact ? undefined : { scale: [1, 1.1, 1] }}
               transition={{
                 duration: 1.5,
                 repeat: Infinity,
                 ease: 'easeInOut',
               }}
             >
-              🏆 冠军
+              {soleChampion ? '🏆 冠军' : '🏆 并列冠军'}
             </motion.span>
           )}
         </div>
@@ -240,7 +248,13 @@ function ResultCard({ result }: { result: FinalResult }) {
         <motion.p
           className={clsx(
             'font-bold tabular-nums',
-            isWinner ? 'text-6xl text-amber-300' : 'text-4xl text-slate-100',
+            isWinner
+              ? compact
+                ? 'text-4xl text-amber-300'
+                : 'text-6xl text-amber-300'
+              : compact
+                ? 'text-3xl text-slate-100'
+                : 'text-4xl text-slate-100',
           )}
           style={{
             textShadow: isWinner
@@ -255,50 +269,62 @@ function ResultCard({ result }: { result: FinalResult }) {
         </p>
       </div>
 
-      {/* Confetti for winner */}
-      {isWinner && <ConfettiParticles />}
+      {emphasize && <ConfettiParticles />}
     </motion.div>
   );
 }
 
-export function FinalRanking() {
+export function FinalRanking({ compact = false }: { compact?: boolean }) {
   const finalResults = useGameStore((s) => s.finalResults);
 
-  // Sort by rank (6th to 1st for progressive reveal)
   const sorted = useMemo(() => {
-    return [...finalResults].sort(
-      (a, b) => (b.finalRank ?? 0) - (a.finalRank ?? 0),
-    );
-  }, [finalResults]);
+    const copy = [...finalResults];
+    return compact
+      ? copy.sort((a, b) => (a.finalRank ?? 0) - (b.finalRank ?? 0))
+      : copy.sort((a, b) => (b.finalRank ?? 0) - (a.finalRank ?? 0));
+  }, [finalResults, compact]);
+
+  const soleChampion = finalResults.filter((r) => r.finalRank === 1).length === 1;
 
   return (
     <motion.div
-      variants={staggerContainer}
-      initial="hidden"
+      variants={compact ? undefined : staggerContainer}
+      initial={compact ? false : 'hidden'}
       animate="visible"
-      className="flex h-full w-full flex-col items-center justify-center gap-6"
+      className={clsx(
+        'flex h-full w-full flex-col items-center gap-4',
+        compact ? 'justify-start overflow-y-auto py-2' : 'justify-center',
+      )}
     >
-      {/* Title */}
-      <motion.div variants={fadeIn} className="text-center">
-        <h2
-          className="text-5xl font-bold text-violet-300"
-          style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
-        >
-          最终排名
-        </h2>
-        <p className="mt-2 text-2xl text-slate-400">
-          秘宝争夺战圆满结束
-        </p>
-      </motion.div>
+      {!compact && (
+        <motion.div variants={fadeIn} className="shrink-0 text-center">
+          <h2
+            className="text-5xl font-bold text-violet-300"
+            style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
+          >
+            最终排名
+          </h2>
+          <p className="mt-2 text-2xl text-slate-400">
+            秘宝争夺战圆满结束
+          </p>
+        </motion.div>
+      )}
 
-      {/* Results list */}
       <motion.div
-        variants={staggerContainer}
-        className="flex w-full max-w-4xl flex-col gap-3"
+        variants={compact ? undefined : staggerContainer}
+        className={clsx(
+          'flex w-full max-w-4xl flex-col',
+          compact ? 'gap-2' : 'gap-3',
+        )}
       >
         <AnimatePresence>
           {sorted.map((result) => (
-            <ResultCard key={result.playerId} result={result} />
+            <ResultCard
+              key={result.playerId}
+              result={result}
+              compact={compact}
+              soleChampion={soleChampion}
+            />
           ))}
         </AnimatePresence>
       </motion.div>

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { getDb } from '../db/connection.js';
-import { getTodayGameCount } from '../db/repositories/history-repo.js';
+import { getTodayGameCount, getMissionStats } from '../db/repositories/history-repo.js';
 import { ALL_MISSIONS } from '@treasure-contest/shared';
 import type { PlayerMission } from '@treasure-contest/shared';
 import { config } from '../config.js';
@@ -32,6 +32,7 @@ interface GamePlayerResult {
   seatNumber: number;
   finalScore: number;
   finalRank: number | null;
+  missions: PlayerMission[];
 }
 
 /** A game session record returned by GET /api/admin/games */
@@ -44,6 +45,10 @@ interface GameRecord {
   targetPlayers: number;
   createdAt: string;
   updatedAt: string;
+  startTime: string;
+  endTime: string;
+  duration: number;
+  playerCount: number;
   players: GamePlayerResult[];
 }
 
@@ -71,6 +76,15 @@ interface PlayerStat {
 // ============================================================================
 
 /**
+ * Convert SQLite `datetime('now')` UTC text into an ISO-8601 string.
+ */
+function sqliteUtcToIso(value: string): string {
+  if (!value) return '';
+  if (value.includes('T')) return value.endsWith('Z') ? value : `${value}Z`;
+  return `${value.replace(' ', 'T')}Z`;
+}
+
+/**
  * Escape a value for inclusion in a CSV field.
  * Wraps in double-quotes if the value contains a comma, quote, or newline.
  */
@@ -91,46 +105,17 @@ function round2(value: number | null | undefined): number {
 }
 
 /**
- * Aggregate mission appearance and completion counts from players' missions_json.
- *
- * Iterates over all player rows, parses the missions_json column, and
- * tallies how many times each mission appeared and was completed.
+ * Aggregate mission appearance and completion from `mission_result` history
+ * events so stats survive host restart (live missions_json is wiped).
  */
 function aggregateMissionStats(): Map<string, { appearedCount: number; completedCount: number }> {
-  const db = getDb();
-
-  const rows = db
-    .prepare(
-      `SELECT missions_json
-         FROM players
-        WHERE missions_json IS NOT NULL
-          AND missions_json != '[]'`,
-    )
-    .all() as Array<{ missions_json: string }>;
-
   const stats = new Map<string, { appearedCount: number; completedCount: number }>();
-
-  for (const row of rows) {
-    let missions: PlayerMission[];
-    try {
-      missions = JSON.parse(row.missions_json) as PlayerMission[];
-    } catch {
-      continue;
-    }
-
-    for (const mission of missions) {
-      if (!mission.missionId) continue;
-      if (!stats.has(mission.missionId)) {
-        stats.set(mission.missionId, { appearedCount: 0, completedCount: 0 });
-      }
-      const entry = stats.get(mission.missionId)!;
-      entry.appearedCount++;
-      if (mission.completed) {
-        entry.completedCount++;
-      }
-    }
+  for (const row of getMissionStats()) {
+    stats.set(row.missionId, {
+      appearedCount: row.totalAssigned,
+      completedCount: row.totalCompleted,
+    });
   }
-
   return stats;
 }
 
@@ -302,7 +287,7 @@ export function createAdminRouter(): Router {
         .prepare(
           `SELECT COUNT(DISTINCT name) AS cnt
              FROM players
-            WHERE DATE(created_at) = DATE('now')`,
+            WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')`,
         )
         .get() as { cnt: number };
 
@@ -317,7 +302,7 @@ export function createAdminRouter(): Router {
                       ) * 86400 AS duration
                  FROM game_history
                 WHERE event_type IN ('game_start', 'game_end')
-                  AND DATE(created_at) = DATE('now')
+                  AND DATE(created_at, 'localtime') = DATE('now', 'localtime')
                 GROUP BY room_code
              )
             WHERE duration IS NOT NULL`,
@@ -332,7 +317,7 @@ export function createAdminRouter(): Router {
                SELECT r.code, COUNT(p.id) AS player_count
                  FROM rooms r
                  JOIN players p ON p.room_code = r.code
-                WHERE DATE(r.created_at) = DATE('now')
+                WHERE DATE(r.created_at, 'localtime') = DATE('now', 'localtime')
                 GROUP BY r.code
              )`,
         )
@@ -363,7 +348,7 @@ export function createAdminRouter(): Router {
           `SELECT code, game_session, host_name, phase, current_round,
                   target_players, created_at, updated_at
              FROM rooms
-            WHERE DATE(created_at) = DATE('now')
+            WHERE DATE(created_at, 'localtime') = DATE('now', 'localtime')
             ORDER BY created_at DESC`,
         )
         .all() as Array<{
@@ -387,13 +372,14 @@ export function createAdminRouter(): Router {
         seat_number: number;
         final_score: number;
         final_rank: number | null;
+        missions_json: string;
       }> = [];
 
       if (roomCodes.length > 0) {
         const placeholders = roomCodes.map(() => '?').join(',');
         playerRows = db
           .prepare(
-            `SELECT id, room_code, name, seat_number, final_score, final_rank
+            `SELECT id, room_code, name, seat_number, final_score, final_rank, missions_json
                FROM players
               WHERE room_code IN (${placeholders})
               ORDER BY room_code, final_rank ASC`,
@@ -407,27 +393,50 @@ export function createAdminRouter(): Router {
         if (!playersByRoom.has(p.room_code)) {
           playersByRoom.set(p.room_code, []);
         }
+        let missions: PlayerMission[] = [];
+        try {
+          const parsed = JSON.parse(p.missions_json || '[]') as PlayerMission[];
+          if (Array.isArray(parsed)) missions = parsed;
+        } catch {
+          missions = [];
+        }
         playersByRoom.get(p.room_code)!.push({
           id: p.id,
           name: p.name,
           seatNumber: p.seat_number,
           finalScore: p.final_score,
           finalRank: p.final_rank,
+          missions,
         });
       }
 
       // Assemble game records
-      const games: GameRecord[] = rooms.map((r) => ({
-        roomCode: r.code,
-        gameSession: r.game_session,
-        hostName: r.host_name,
-        phase: r.phase,
-        currentRound: r.current_round,
-        targetPlayers: r.target_players,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        players: playersByRoom.get(r.code) ?? [],
-      }));
+      const games: GameRecord[] = rooms.map((r) => {
+        const players = playersByRoom.get(r.code) ?? [];
+        const startIso = sqliteUtcToIso(r.created_at);
+        const endIso = sqliteUtcToIso(r.updated_at);
+        const startMs = Date.parse(startIso);
+        const endMs = Date.parse(endIso);
+        const duration =
+          Number.isFinite(startMs) && Number.isFinite(endMs)
+            ? Math.max(0, Math.round((endMs - startMs) / 1000))
+            : 0;
+        return {
+          roomCode: r.code,
+          gameSession: r.game_session,
+          hostName: r.host_name,
+          phase: r.phase,
+          currentRound: r.current_round,
+          targetPlayers: r.target_players,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          startTime: startIso,
+          endTime: endIso,
+          duration,
+          playerCount: players.length,
+          players,
+        };
+      });
 
       res.json(games);
     } catch (err) {
@@ -484,14 +493,14 @@ export function createAdminRouter(): Router {
       const rows = db
         .prepare(
           `SELECT
-             p.name                                          AS name,
-             COUNT(*)                                        AS games_played,
-             AVG(p.final_rank)                               AS avg_rank,
-             COALESCE(SUM(p.final_score), 0)                 AS total_score
-           FROM players p
-           JOIN rooms r ON r.code = p.room_code
-          WHERE r.phase = 'GAME_OVER'
-          GROUP BY p.name
+             json_extract(event_data, '$.name') AS name,
+             COUNT(*) AS games_played,
+             AVG(json_extract(event_data, '$.finalRank')) AS avg_rank,
+             COALESCE(SUM(json_extract(event_data, '$.finalScore')), 0) AS total_score
+           FROM game_history
+          WHERE event_type = 'final_result'
+            AND json_extract(event_data, '$.name') IS NOT NULL
+          GROUP BY json_extract(event_data, '$.name')
           ORDER BY games_played DESC, total_score DESC`,
         )
         .all() as Array<{
@@ -524,7 +533,7 @@ export function createAdminRouter(): Router {
       // -- Section 1: Game records --
       lines.push('=== Game Records ===');
       lines.push(
-        'Room Code,Game Session,Host Name,Phase,Current Round,Target Players,Created At,Updated At',
+        'Room Code,Game Session,Host Name,Phase,Current Round,Target Players,Start Time,End Time',
       );
 
       const rooms = db
@@ -554,8 +563,8 @@ export function createAdminRouter(): Router {
             csvEscape(r.phase),
             csvEscape(r.current_round),
             csvEscape(r.target_players),
-            csvEscape(r.created_at),
-            csvEscape(r.updated_at),
+            csvEscape(sqliteUtcToIso(r.created_at)),
+            csvEscape(sqliteUtcToIso(r.updated_at)),
           ].join(','),
         );
       }

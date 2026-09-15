@@ -9,7 +9,7 @@
  * or when it is not the player's turn.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { socket } from '../lib/socket-client';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
@@ -33,20 +33,24 @@ export interface UsePlayerActionsReturn {
 
 export function usePlayerActions(): UsePlayerActionsReturn {
   const isConnected = useSocketStore((s) => s.isConnected);
+  const pendingNumberRef = useRef(false);
+  const pendingGemRef = useRef(false);
 
   const submitNumber = useCallback(
     (number: number): boolean => {
       if (!isConnected) return false;
 
-      // Guard: don't allow double submission
       const state = useGameStore.getState();
       if (state.roundSubmission !== null) return false;
+      if (pendingNumberRef.current) return false;
       if (!state.availableNumbers.includes(number)) return false;
       if (state.phase !== 'NUMBER_SELECTION') return false;
 
+      pendingNumberRef.current = true;
       socket.emit('action:submit_number', { number });
-      // Optimistically update local state; server will confirm via state:sync
-      useGameStore.setState({ roundSubmission: number });
+      window.setTimeout(() => {
+        pendingNumberRef.current = false;
+      }, 800);
       return true;
     },
     [isConnected],
@@ -59,8 +63,13 @@ export function usePlayerActions(): UsePlayerActionsReturn {
       const state = useGameStore.getState();
       if (state.phase !== 'GEM_SELECTION') return false;
       if (state.currentPickerId !== state.playerId) return false;
+      if (pendingGemRef.current) return false;
 
+      pendingGemRef.current = true;
       socket.emit('action:select_gem', { gemId });
+      window.setTimeout(() => {
+        pendingGemRef.current = false;
+      }, 800);
       return true;
     },
     [isConnected],

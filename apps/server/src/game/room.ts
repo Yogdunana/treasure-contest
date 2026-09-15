@@ -104,6 +104,12 @@ export class Room {
   // -- Game session (for cross-game isolation) --
   gameSession: number = 1;
 
+  /** Latest auth tokens keyed by playerId (sent in private snapshots after restart). */
+  playerAuthTokens: Map<string, string> = new Map();
+
+  /** Live socket id for each seated player; used to ignore stale disconnects. */
+  playerSocketIds: Map<string, string> = new Map();
+
   // -- Pause state --
   isPaused: boolean = false;
   pausedPhase: GamePhase | null = null;
@@ -171,8 +177,16 @@ export class Room {
    * Return the playerId of the current picker during GEM_SELECTION,
    * or null if not in that phase or no more pickers.
    */
+  /**
+   * Phase the UI should render while paused (the phase we will resume into).
+   */
+  getViewPhase(): GamePhase {
+    if (this.phase === 'PAUSED' && this.pausedPhase) return this.pausedPhase;
+    return this.phase;
+  }
+
   getCurrentPickerId(): string | null {
-    if (this.phase !== 'GEM_SELECTION') return null;
+    if (this.getViewPhase() !== 'GEM_SELECTION') return null;
     if (this.currentPickerIndex >= this.selectionOrder.length) return null;
     return this.selectionOrder[this.currentPickerIndex] ?? null;
   }
@@ -204,29 +218,37 @@ export class Room {
       ...(currentPickerId !== null ? { currentPlayerId: currentPickerId } : {}),
     };
 
-    // Determine which fields to show based on phase
+    // Determine which fields to show based on the visible phase.
+    // While PAUSED, keep the frozen scene (numbers/order/picker) instead of
+    // blanking the big screen.
+    const viewPhase = this.getViewPhase();
     const showOrderInfo =
-      this.phase === 'ORDER_CALCULATION' ||
-      this.phase === 'GEM_SELECTION' ||
-      this.phase === 'ROUND_END' ||
-      this.phase === 'FINAL_CALCULATION' ||
-      this.phase === 'RESULTS_REVEAL' ||
-      this.phase === 'GAME_OVER';
+      viewPhase === 'ORDER_CALCULATION' ||
+      viewPhase === 'GEM_SELECTION' ||
+      viewPhase === 'ROUND_END' ||
+      viewPhase === 'FINAL_CALCULATION' ||
+      viewPhase === 'RESULTS_REVEAL' ||
+      viewPhase === 'GAME_OVER';
 
     const showRevealedNumbers =
-      this.phase === 'NUMBER_REVEAL' ||
-      this.phase === 'ORDER_CALCULATION' ||
-      this.phase === 'GEM_SELECTION' ||
-      this.phase === 'ROUND_END' ||
-      this.phase === 'FINAL_CALCULATION' ||
-      this.phase === 'RESULTS_REVEAL' ||
-      this.phase === 'GAME_OVER';
+      viewPhase === 'NUMBER_REVEAL' ||
+      viewPhase === 'ORDER_CALCULATION' ||
+      viewPhase === 'GEM_SELECTION' ||
+      viewPhase === 'ROUND_END' ||
+      viewPhase === 'FINAL_CALCULATION' ||
+      viewPhase === 'RESULTS_REVEAL' ||
+      viewPhase === 'GAME_OVER';
 
-    // Determine final results visibility
+    // Determine final results visibility.
+    // Reveal ceremony is worst → best (lowest score first). Rank-sorted
+    // `finalResults` is best-first, so slice a score-ascending copy instead.
     let finalResults: FinalResult[] | null = null;
-    if (this.phase === 'RESULTS_REVEAL') {
-      finalResults = this.finalResults.slice(0, this.revealedResultsCount);
-    } else if (this.phase === 'GAME_OVER') {
+    if (viewPhase === 'RESULTS_REVEAL') {
+      const revealOrder = [...this.finalResults].sort(
+        (a, b) => a.finalScore - b.finalScore,
+      );
+      finalResults = revealOrder.slice(0, this.revealedResultsCount);
+    } else if (viewPhase === 'GAME_OVER') {
       finalResults = this.finalResults;
     }
 
@@ -246,6 +268,7 @@ export class Room {
       timer,
       queueCount: this.queue.length,
       finalResults,
+      targetPlayers: this.targetPlayers,
     };
   }
 
@@ -271,6 +294,8 @@ export class Room {
     // Suppress unused variable lint
     void colorCounts;
 
+    const authToken = this.playerAuthTokens.get(playerId);
+
     return {
       playerId: player.id,
       availableNumbers: player.availableNumbers,
@@ -282,6 +307,7 @@ export class Room {
       colorBonuses,
       finalScore,
       finalRank,
+      ...(authToken ? { authToken } : {}),
     };
   }
 

@@ -37,6 +37,36 @@ export class QueueManager {
     fingerprint?: string,
     cookieToken?: string,
   ): QueueEntry | null {
+    const existing = room.queue.find((e) => e.playerName === playerName);
+    if (existing) {
+      existing.socketId = socketId;
+      if (fingerprint) existing.browserFingerprint = fingerprint;
+      if (cookieToken) existing.cookieToken = cookieToken;
+
+      try {
+        queueRepo.addToQueue(
+          existing.id,
+          room.code,
+          playerName,
+          fingerprint ?? null,
+          cookieToken ?? null,
+          socketId,
+        );
+      } catch (err) {
+        logger.error('Failed to update existing queue entry in DB', {
+          error: err instanceof Error ? err.message : err,
+        });
+      }
+
+      logger.info('Player queue entry updated (same name)', {
+        room: room.code,
+        playerName,
+        position: existing.position,
+      });
+
+      return existing;
+    }
+
     if (room.queue.length >= QUEUE_CONFIG.MAX_QUEUE_SIZE) {
       logger.warn('Queue is full', {
         room: room.code,
@@ -60,21 +90,41 @@ export class QueueManager {
       joinedAt,
     };
 
-    // Add to in-memory queue
-    room.queue.push(entry);
-
-    // Persist to DB
+    // Persist first so a UNIQUE conflict can recover the existing row
+    // instead of crashing the join path.
     try {
-      queueRepo.addToQueue(
+      const persisted = queueRepo.addToQueue(
         id,
         room.code,
         playerName,
         fingerprint ?? null,
         cookieToken ?? null,
+        socketId,
       );
+      if (persisted.id !== id) {
+        const recovered: QueueEntry = {
+          ...persisted,
+          socketId,
+          ...(fingerprint ? { browserFingerprint: fingerprint } : {}),
+          ...(cookieToken ? { cookieToken } : {}),
+        };
+        room.queue.push(recovered);
+        this.reindexQueue(room);
+        logger.info('Player queue entry recovered from DB (same name)', {
+          room: room.code,
+          playerName,
+          position: recovered.position,
+        });
+        return recovered;
+      }
     } catch (err) {
-      logger.error('Failed to persist queue entry to DB', { error: err });
+      logger.error('Failed to persist queue entry to DB', {
+        error: err instanceof Error ? err.message : err,
+      });
     }
+
+    // Add to in-memory queue
+    room.queue.push(entry);
 
     logger.info('Player added to queue', {
       room: room.code,
@@ -126,6 +176,30 @@ export class QueueManager {
     });
 
     return entry;
+  }
+
+  /**
+   * Put a previously promoted entry back at the front of the queue.
+   * Used when seating fails after the entry was already removed.
+   */
+  requeueAtFront(room: Room, entry: QueueEntry): void {
+    room.queue.unshift(entry);
+    this.reindexQueue(room);
+
+    try {
+      queueRepo.addToQueue(
+        entry.id,
+        room.code,
+        entry.playerName,
+        entry.browserFingerprint ?? null,
+        entry.cookieToken ?? null,
+        entry.socketId ?? null,
+      );
+    } catch (err) {
+      logger.error('Failed to requeue entry in DB', {
+        error: err instanceof Error ? err.message : err,
+      });
+    }
   }
 
   /**

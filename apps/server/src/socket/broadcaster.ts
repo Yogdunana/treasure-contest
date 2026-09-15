@@ -45,6 +45,21 @@ export class Broadcaster {
   // ========================================================================
 
   /**
+   * Emit the role-filtered snapshot to one socket immediately.
+   *
+   * Used when a client (especially the big screen) joins or refreshes:
+   * `broadcast()` relies on async `fetchSockets()` after `socket.join()`,
+   * which can miss the joining socket. A direct emit does not.
+   */
+  sendSnapshot(socket: AppSocket, room: Room): StateSnapshot | null {
+    const snapshot = this.buildSnapshot(room, socket.data);
+    if (snapshot) {
+      socket.emit('state:sync', snapshot);
+    }
+    return snapshot;
+  }
+
+  /**
    * Broadcast the current room state to all connected clients in that room.
    *
    * For each socket in the room, a role-filtered `StateSnapshot` is built

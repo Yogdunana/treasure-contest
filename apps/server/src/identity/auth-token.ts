@@ -83,7 +83,9 @@ export function verifyAuthToken(
       playerId,
       roomCode,
     });
-    return { valid: false };
+    // Keep extracted fields so callers can distinguish SESSION_EXPIRED
+    // from a malformed token (which returns no session).
+    return { valid: false, playerId, roomCode, session };
   }
 
   return {

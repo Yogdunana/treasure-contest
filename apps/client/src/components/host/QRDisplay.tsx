@@ -24,6 +24,7 @@ export function QRDisplay({ className }: QRDisplayProps) {
   const roomCode = useSocketStore((s) => s.roomCode);
   const playerSeats = useGameStore((s) => s.playerSeats);
   const queueCount = useGameStore((s) => s.queueCount);
+  const targetPlayers = useGameStore((s) => s.targetPlayers);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   const connectedPlayers = playerSeats.filter((p) => p.isConnected).length;
@@ -92,20 +93,23 @@ export function QRDisplay({ className }: QRDisplayProps) {
 
       {/* Player count */}
       <div className="flex items-center justify-center gap-2 text-sm">
-        <span className="text-slate-400">在线玩家</span>
+        <span className="text-slate-400">已加入</span>
         <motion.span
           key={totalPlayers}
           className={clsx(
             'font-bold',
-            totalPlayers >= MIN_PLAYERS ? 'text-emerald-400' : 'text-amber-400',
+            connectedPlayers >= MIN_PLAYERS ? 'text-emerald-400' : 'text-amber-400',
           )}
           initial={{ scale: 1.2 }}
           animate={{ scale: 1 }}
         >
-          {connectedPlayers}
+          {totalPlayers}
         </motion.span>
         <span className="text-slate-500">/</span>
-        <span className="font-bold text-slate-300">{totalPlayers}</span>
+        <span className="font-bold text-slate-300">{targetPlayers}</span>
+        <span className="text-xs text-slate-500">
+          ({connectedPlayers} 在线)
+        </span>
         {queueCount > 0 && (
           <span className="ml-1 text-xs text-sky-400">
             (排队 {queueCount})
@@ -113,7 +117,7 @@ export function QRDisplay({ className }: QRDisplayProps) {
         )}
       </div>
 
-      {totalPlayers < MIN_PLAYERS && (
+      {connectedPlayers < MIN_PLAYERS && (
         <p className="mt-2 text-center text-xs text-amber-500/80">
           至少需要 {MIN_PLAYERS} 名玩家才能开始
         </p>

@@ -16,12 +16,19 @@
  */
 
 import { useCallback } from 'react';
+import type { CreateRoomAck } from '@treasure-contest/shared';
 import { socket } from '../lib/socket-client';
 import { useSocketStore } from '../store/socket-store';
+import { saveHostAuth } from '../lib/auth-storage';
 
 export interface UseHostControlsReturn {
   /** Create a new room. Returns the emitted status. */
-  createRoom: (hostName: string, targetPlayers: number, hostPassword: string) => boolean;
+  createRoom: (
+    hostName: string,
+    targetPlayers: number,
+    hostPassword: string,
+    onResult?: (ack: CreateRoomAck) => void,
+  ) => boolean;
   /** Start the game in the current room. */
   startGame: () => boolean;
   /** Pause the game. */
@@ -46,9 +53,21 @@ export function useHostControls(): UseHostControlsReturn {
   const isConnected = useSocketStore((s) => s.isConnected);
 
   const createRoom = useCallback(
-    (hostName: string, targetPlayers: number, hostPassword: string): boolean => {
+    (
+      hostName: string,
+      targetPlayers: number,
+      hostPassword: string,
+      onResult?: (ack: CreateRoomAck) => void,
+    ): boolean => {
       if (!isConnected) return false;
-      socket.emit('host:create_room', { hostName, targetPlayers, hostPassword });
+      socket.emit('host:create_room', { hostName, targetPlayers, hostPassword }, (ack) => {
+        if (ack.success && ack.roomCode && ack.hostToken) {
+          saveHostAuth(ack.roomCode, hostName, ack.hostToken);
+          socket.auth = { hostToken: ack.hostToken };
+          useSocketStore.setState({ roomCode: ack.roomCode, role: 'host' });
+        }
+        onResult?.(ack);
+      });
       return true;
     },
     [isConnected],
