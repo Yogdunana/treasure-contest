@@ -123,12 +123,12 @@ function SeatCard({
         {seat.name}
       </p>
 
-      {/* Connection status */}
+      {/* Connection status — hide "在线" when the card already shows 选择中/已提交 */}
       {!seat.isConnected ? (
         <span className="rounded-full bg-rose-900/50 px-3 py-0.5 text-xs text-rose-400">
           离线
         </span>
-      ) : (
+      ) : showSubmissionStatus ? null : (
         <span className="rounded-full bg-emerald-900/40 px-3 py-0.5 text-xs text-emerald-400">
           在线
         </span>
