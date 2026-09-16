@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { socket } from '../../lib/socket-client';
@@ -27,7 +27,7 @@ import {
   clearAuthLocal,
   generateFingerprint,
 } from '../../lib/auth-storage';
-import { persistPlayerSession } from '../../lib/session';
+import { persistPlayerSession, clearPlayerSession } from '../../lib/session';
 import type { RoomJoinAck } from '@treasure-contest/shared';
 import { QueuePage } from '../../components/player/QueuePage';
 import {
@@ -43,11 +43,18 @@ type JoinMode = 'idle' | 'connecting' | 'reconnecting' | 'queue';
 export default function PlayerJoinPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const kickedNotice =
+    (location.state as { kicked?: boolean; message?: string } | null)?.kicked
+      ? ((location.state as { message?: string }).message ?? '主持人已将你移出座位')
+      : null;
 
   const [mode, setMode] = useState<JoinMode>('idle');
   const [playerName, setPlayerName] = useState('');
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    kickedNotice,
+  );
   const [sessionExpired, setSessionExpired] = useState(false);
 
   const isConnected = useSocketStore((s) => s.isConnected);
@@ -93,6 +100,13 @@ export default function PlayerJoinPage() {
         setSessionExpired(true);
         setErrorCode(payload.code);
         setErrorMessage(payload.message);
+        setMode('idle');
+      } else if (payload.code === ErrorCodes.KICKED) {
+        clearAuthLocal(roomCode);
+        void clearPlayerSession();
+        useGameStore.getState().reset();
+        setErrorCode(payload.code);
+        setErrorMessage(payload.message || '主持人已将你移出');
         setMode('idle');
       } else if (
         payload.code === ErrorCodes.PLAYER_NOT_FOUND ||
@@ -370,7 +384,7 @@ export default function PlayerJoinPage() {
               className="w-full rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-center"
             >
               <p className="text-sm text-red-300">{errorMessage}</p>
-              {errorCode && (
+              {errorCode && errorCode !== ErrorCodes.KICKED && (
                 <p className="mt-0.5 text-[10px] text-red-500">
                   错误码: {errorCode}
                 </p>

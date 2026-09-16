@@ -3,6 +3,7 @@ import type {
   SkipPlayerPayload,
   PromotePlayerPayload,
   RemoveFromQueuePayload,
+  KickPlayerPayload,
   ErrorCode,
 } from '@treasure-contest/shared';
 import {
@@ -16,6 +17,8 @@ import type { QueueManager } from '../game/queue-manager.js';
 import type { Room } from '../game/room.js';
 import type { Broadcaster } from './broadcaster.js';
 import type { AppServer, AppSocket } from './middleware.js';
+import { tryPromoteFromQueue } from './connection-handler.js';
+import { HistoryLogger } from '../game/history.js';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 import * as roomRepo from '../db/repositories/room-repo.js';
@@ -52,6 +55,7 @@ interface CreateRoomAck {
  * - `host:skip_player` — Skip the current gem picker.
  * - `host:promote_player` — Promote a queued player to a full seat.
  * - `host:remove_from_queue` — Remove a player from the waiting queue.
+ * - `host:kick_player` — Remove a seated player during LOBBY (frees the seat).
  * - `host:end_game` — End the game early (→ GAME_OVER).
  * - `host:restart` — Restart for a new game (increments gameSession).
  *
@@ -116,6 +120,11 @@ export function setupHostHandlers(
   // -- host:remove_from_queue ---------------------------------------------
   socket.on('host:remove_from_queue', (payload: RemoveFromQueuePayload) => {
     handleRemoveFromQueue(io, socket, payload, roomManager, queueManager, broadcaster);
+  });
+
+  // -- host:kick_player ---------------------------------------------------
+  socket.on('host:kick_player', (payload: KickPlayerPayload) => {
+    handleKickPlayer(io, socket, payload, roomManager, queueManager, broadcaster);
   });
 
   // -- host:end_game ------------------------------------------------------
@@ -616,14 +625,92 @@ function handleRemoveFromQueue(
     queueEntryId,
   });
 
-  // Remove from queue
+  const entry = room.queue.find((e) => e.id === queueEntryId);
+  const queuedSocket = entry?.socketId
+    ? io.sockets.sockets.get(entry.socketId)
+    : undefined;
+
   queueManager.removeFromQueue(room, queueEntryId);
 
-  // Notify host of queue update
-  broadcaster.sendQueueUpdate(room, room.queue);
+  if (queuedSocket) {
+    queuedSocket.data.role = undefined;
+    queuedSocket.data.queueEntryId = undefined;
+    queuedSocket.leave(room.code);
+    broadcaster.sendError(queuedSocket, 'KICKED', '主持人已将你移出排队');
+  }
 
-  // Broadcast updated state
+  broadcaster.sendQueueUpdate(room, room.queue);
   broadcaster.broadcast(room);
+}
+
+// ============================================================================
+// host:kick_player
+// ============================================================================
+
+/**
+ * Handle `host:kick_player` — permanently remove a seated player in LOBBY.
+ *
+ * Used when someone scanned, entered a name, then left the hall (or is
+ * still "online" on a pocketed phone but not actually present). The seat
+ * is freed and the next queued player is auto-promoted if any.
+ */
+function handleKickPlayer(
+  io: AppServer,
+  socket: AppSocket,
+  payload: KickPlayerPayload,
+  roomManager: RoomManager,
+  queueManager: QueueManager,
+  broadcaster: Broadcaster,
+): void {
+  const room = verifyHost(socket, roomManager, broadcaster);
+  if (!room) return;
+
+  const { playerId } = payload;
+  if (!playerId) {
+    broadcaster.sendError(socket, 'INVALID_ACTION', 'Player ID is required');
+    return;
+  }
+
+  if (room.phase !== 'LOBBY') {
+    broadcaster.sendError(socket, 'INVALID_ACTION', '只能在游戏开始前移除座位上的玩家');
+    return;
+  }
+
+  const player = room.players.get(playerId);
+  if (!player) {
+    broadcaster.sendError(socket, 'PLAYER_NOT_FOUND', '玩家不在座位上');
+    return;
+  }
+
+  logger.info('host:kick_player', {
+    room: room.code,
+    playerId,
+    name: player.name,
+    connected: player.isConnected,
+  });
+
+  const socketId = room.playerSocketIds.get(playerId);
+  const kickedSocket = socketId ? io.sockets.sockets.get(socketId) : undefined;
+
+  // Drop socket identity before deleting the player so a follow-up
+  // disconnect cannot mark a missing seat as merely offline.
+  if (kickedSocket) {
+    kickedSocket.data.playerId = undefined;
+    kickedSocket.data.role = undefined;
+    kickedSocket.leave(room.code);
+    broadcaster.sendError(kickedSocket, 'KICKED', '主持人已将你移出座位');
+  }
+
+  roomManager.removePlayer(room.code, playerId);
+  io.to(room.code).emit('player:left', { playerId });
+
+  new HistoryLogger(room).log('player_kicked', undefined, room.phase, playerId, {
+    name: player.name,
+    reason: 'host',
+  });
+
+  broadcaster.broadcast(room);
+  tryPromoteFromQueue(io, room, roomManager, queueManager, broadcaster);
 }
 
 // ============================================================================

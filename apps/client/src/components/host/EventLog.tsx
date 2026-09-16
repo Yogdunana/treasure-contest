@@ -24,7 +24,7 @@ function categorizeEvent(eventType: string): EventCategory {
   if (lower.includes('join') || lower.includes('connect') || lower.includes('ready')) {
     return 'join';
   }
-  if (lower.includes('leave') || lower.includes('disconnect') || lower.includes('remove') || lower.includes('end') || lower.includes('skip')) {
+  if (lower.includes('leave') || lower.includes('disconnect') || lower.includes('remove') || lower.includes('kick') || lower.includes('end') || lower.includes('skip')) {
     return 'leave';
   }
   if (lower.includes('submit') || lower.includes('select') || lower.includes('pick') || lower.includes('reveal') || lower.includes('advance') || lower.includes('start') || lower.includes('pause') || lower.includes('resume')) {

@@ -14,10 +14,11 @@
  * The current picker is highlighted during GEM_SELECTION.
  */
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../store/game-store';
+import { useHostControls } from '../../hooks/useHostControls';
 import { PlayerAvatar } from '../shared/PlayerAvatar';
 import { GemIcon } from '../shared/GemIcon';
 import { INITIAL_NUMBERS } from '@treasure-contest/shared';
@@ -71,7 +72,21 @@ function MissionBadges({ missions }: { missions: PlayerMission[] }) {
 }
 
 /** Renders a single player's status card. */
-function PlayerCard({ player }: { player: Player }) {
+function PlayerCard({
+  player,
+  canKick,
+  confirming,
+  onAskKick,
+  onCancelKick,
+  onConfirmKick,
+}: {
+  player: Player;
+  canKick: boolean;
+  confirming: boolean;
+  onAskKick: () => void;
+  onCancelKick: () => void;
+  onConfirmKick: () => void;
+}) {
   const phase = useGameStore((s) => s.phase);
   const revealedNumbers = useGameStore((s) => s.revealedNumbers);
   const currentPickerId = useGameStore((s) => s.currentPickerId);
@@ -213,12 +228,50 @@ function PlayerCard({ player }: { player: Player }) {
         <span className="text-[10px] text-slate-500">任务</span>
         <MissionBadges missions={player.missions} />
       </div>
+
+      {canKick && (
+        <div className="mt-2 border-t border-slate-700/50 pt-2">
+          {confirming ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onConfirmKick}
+                className="flex-1 rounded bg-rose-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-rose-500"
+              >
+                确认移除
+              </button>
+              <button
+                type="button"
+                onClick={onCancelKick}
+                className="flex-1 rounded bg-slate-700 px-2 py-1 text-[10px] font-medium text-slate-300 hover:bg-slate-600"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onAskKick}
+              className="w-full rounded bg-rose-950/60 px-2 py-1 text-[10px] font-semibold text-rose-300 ring-1 ring-rose-800/70 transition-colors hover:bg-rose-900/70"
+              title={player.isConnected ? '人不在现场也可以移出座位' : '移出离线座位，排队的人会自动上来'}
+            >
+              {player.isConnected ? '移除座位' : '移除离线座位'}
+            </button>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
 
 function PlayerStatusGridComponent() {
   const allPlayers = useGameStore((s) => s.allPlayers);
+  const phase = useGameStore((s) => s.phase);
+  const queueList = useGameStore((s) => s.queueList);
+  const { kickPlayer } = useHostControls();
+  const [pendingKickId, setPendingKickId] = useState<string | null>(null);
+
+  const canKick = phase === 'LOBBY';
 
   if (allPlayers.length === 0) {
     return (
@@ -244,9 +297,28 @@ function PlayerStatusGridComponent() {
           {allPlayers.length} 人
         </span>
       </div>
+      {canKick && (
+        <p className="mb-2 text-[10px] leading-relaxed text-slate-500">
+          人不在现场可点「移除座位」。
+          {queueList.length > 0
+            ? '移除后排队的下一位会自动入座。'
+            : '移除后座位空出，后来的人可以加入。'}
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-2">
         {sorted.map((player) => (
-          <PlayerCard key={player.id} player={player} />
+          <PlayerCard
+            key={player.id}
+            player={player}
+            canKick={canKick}
+            confirming={pendingKickId === player.id}
+            onAskKick={() => setPendingKickId(player.id)}
+            onCancelKick={() => setPendingKickId(null)}
+            onConfirmKick={() => {
+              kickPlayer(player.id);
+              setPendingKickId(null);
+            }}
+          />
         ))}
       </div>
     </div>

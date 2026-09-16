@@ -22,6 +22,7 @@ import {
   getAuthFromLocal,
   clearAuthLocal,
 } from '../../lib/auth-storage';
+import { clearPlayerSession } from '../../lib/session';
 import {
   DisconnectedBanner,
   PhaseRenderer,
@@ -70,9 +71,18 @@ export default function PlayerGamePage() {
     if (!roomCode) return;
 
     const errorHandler = (payload: ErrorPayload) => {
-      if (payload.code === ErrorCodes.SESSION_EXPIRED) {
+      if (
+        payload.code === ErrorCodes.SESSION_EXPIRED ||
+        payload.code === ErrorCodes.KICKED
+      ) {
         clearAuthLocal(roomCode);
-        navigate(`/play/${roomCode}`);
+        void clearPlayerSession();
+        useGameStore.getState().reset();
+        navigate(`/play/${roomCode}`, {
+          state: payload.code === ErrorCodes.KICKED
+            ? { kicked: true, message: payload.message }
+            : undefined,
+        });
       } else if (
         payload.code === ErrorCodes.PLAYER_NOT_FOUND ||
         payload.code === ErrorCodes.ROOM_NOT_FOUND

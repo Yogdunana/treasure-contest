@@ -27,6 +27,8 @@ export const ErrorCodes = {
   NAME_TAKEN: 'NAME_TAKEN',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /** Host removed this player from a seat or the waiting queue. */
+  KICKED: 'KICKED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -149,6 +151,11 @@ export interface RemoveFromQueuePayload {
   queueEntryId: string;
 }
 
+/** `host:kick_player` - Remove a seated player (lobby only) */
+export interface KickPlayerPayload {
+  playerId: string;
+}
+
 // ============================================================================
 // Server-to-Client Event Payloads
 // ============================================================================
@@ -237,6 +244,7 @@ export interface ClientToServerEvents {
   'host:skip_player': (payload: SkipPlayerPayload) => void;
   'host:promote_player': (payload: PromotePlayerPayload) => void;
   'host:remove_from_queue': (payload: RemoveFromQueuePayload) => void;
+  'host:kick_player': (payload: KickPlayerPayload) => void;
   'host:end_game': () => void;
   'host:restart': () => void;
 }

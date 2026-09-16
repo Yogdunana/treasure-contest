@@ -3,8 +3,8 @@
  *
  * Shows the total queue count, a list of queued players with their position
  * and join time, and buttons to promote or remove each entry.  An empty
- * state is shown when no one is queued.  The panel is only active during
- * the LOBBY and GAME_OVER phases.
+ * state is shown when no one is queued.  Promoting into a seat is only
+ * allowed during LOBBY; removing from the queue is always available.
  */
 
 import { memo } from 'react';
@@ -86,18 +86,10 @@ function QueuePanelComponent() {
   const phase = useGameStore((s) => s.phase);
   const queueList = useGameStore((s) => s.queueList);
 
-  // Promote into a seat is only allowed in LOBBY (server-enforced).
-  const isActive = phase === 'LOBBY';
+  const canPromote = phase === 'LOBBY';
 
   return (
-    <div
-      className={clsx(
-        'rounded-xl border p-4 transition-opacity',
-        isActive
-          ? 'border-slate-700 bg-slate-800/40'
-          : 'border-slate-800 bg-slate-900/30 opacity-50',
-      )}
-    >
+    <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-300">
@@ -118,22 +110,21 @@ function QueuePanelComponent() {
       {/* Queue list */}
       {queueList.length === 0 ? (
         <div className="flex h-20 items-center justify-center text-xs text-slate-600">
-          {isActive ? '队列为空' : '游戏进行中不可提升入座'}
+          队列为空
         </div>
       ) : (
         <div className="space-y-1.5">
           <AnimatePresence>
             {queueList.map((entry) => (
-              <QueueRow key={entry.id} entry={entry} canPromote={isActive} />
+              <QueueRow key={entry.id} entry={entry} canPromote={canPromote} />
             ))}
           </AnimatePresence>
         </div>
       )}
 
-      {/* Queue info */}
-      {queueList.length > 0 && !isActive && (
-        <p className="mt-2 text-center text-[10px] text-amber-500/70">
-          游戏进行中，队列操作已禁用
+      {queueList.length > 0 && !canPromote && (
+        <p className="mt-2 text-center text-[10px] text-slate-500">
+          对局中不能提升入座，仍可把不在现场的人移出队列
         </p>
       )}
     </div>

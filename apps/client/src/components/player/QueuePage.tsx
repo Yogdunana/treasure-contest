@@ -147,7 +147,7 @@ export function QueuePage({ roomCode: propRoomCode, playerName }: QueuePageProps
         variants={fadeIn}
         className="max-w-sm text-center text-xs text-slate-500"
       >
-        当有玩家离开时，队列中的玩家将自动加入游戏。
+        主持人移出空座位或有人离开后，队列中的下一位会自动入座。
         请保持此页面打开，系统会自动将您转入游戏。
       </motion.p>
 

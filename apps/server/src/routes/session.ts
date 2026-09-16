@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import * as playerRepo from '../db/repositories/player-repo.js';
-import { setPlayerCookies } from '../identity/cookie-helper.js';
+import { clearPlayerCookies, setPlayerCookies } from '../identity/cookie-helper.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -36,6 +36,11 @@ export function createSessionRouter(): Router {
     }
 
     setPlayerCookies(res, playerId, roomCode);
+    res.json({ success: true });
+  });
+
+  router.delete('/player', (_req: Request, res: Response) => {
+    clearPlayerCookies(res);
     res.json({ success: true });
   });
 

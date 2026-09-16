@@ -19,3 +19,15 @@ export async function persistPlayerSession(
     // Cookie persist is best-effort; Layer-1 localStorage still works.
   }
 }
+
+/** Clear Layer-2 reconnect cookies after an explicit leave or host kick. */
+export async function clearPlayerSession(): Promise<void> {
+  try {
+    await fetch('/api/session/player', {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  } catch {
+    // Best-effort; localStorage clear is the important part.
+  }
+}

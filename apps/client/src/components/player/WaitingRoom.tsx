@@ -6,13 +6,20 @@
  * so the player knows who else is in the room.
  */
 
+import { useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { socket } from '../../lib/socket-client';
 import { useGameStore } from '../../store/game-store';
 import { PlayerAvatar } from '../shared/PlayerAvatar';
 import { MIN_PLAYERS } from '@treasure-contest/shared';
 import { fadeIn, staggerContainer, slideIn } from '../../animations/variants';
+import { clearAuthLocal } from '../../lib/auth-storage';
+import { clearPlayerSession } from '../../lib/session';
 
 export function WaitingRoom() {
+  const navigate = useNavigate();
+  const { roomCode } = useParams<{ roomCode: string }>();
   const playerSeats = useGameStore((s) => s.playerSeats);
   const myPlayerId = useGameStore((s) => s.playerId);
   const queueCount = useGameStore((s) => s.queueCount);
@@ -21,6 +28,16 @@ export function WaitingRoom() {
   const playerCount = playerSeats.length;
   const hasEnough = playerCount >= MIN_PLAYERS;
   const isFull = playerCount >= targetPlayers;
+
+  const handleLeaveSeat = useCallback(() => {
+    socket.emit('room:leave');
+    if (roomCode) {
+      clearAuthLocal(roomCode);
+      void clearPlayerSession();
+      useGameStore.getState().reset();
+      navigate(`/play/${roomCode}`);
+    }
+  }, [navigate, roomCode]);
 
   return (
     <motion.div
@@ -113,6 +130,15 @@ export function WaitingRoom() {
           ))}
         </motion.div>
       )}
+
+      <motion.button
+        variants={fadeIn}
+        type="button"
+        onClick={handleLeaveSeat}
+        className="mt-2 w-full max-w-sm rounded-lg border border-slate-700 bg-slate-800 py-2 text-sm font-medium text-slate-400 transition-colors hover:border-rose-700/50 hover:bg-rose-900/20 hover:text-rose-300"
+      >
+        离开座位
+      </motion.button>
     </motion.div>
   );
 }
