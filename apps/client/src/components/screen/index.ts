@@ -26,7 +26,8 @@ export { GameOverScreen } from './GameOverScreen';
 
 export { QueueIndicator } from './QueueIndicator';
 
-export { PausedOverlay } from './PausedOverlay';
+export { ScreenStage } from './ScreenStage';
+export { SCREEN_STAGE_WIDTH, SCREEN_STAGE_HEIGHT } from './ScreenStage';
 
 export { PlayerSeats } from './PlayerSeats';
 export type { PlayerSeatsProps } from './PlayerSeats';

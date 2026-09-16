@@ -1,8 +1,9 @@
 /**
  * ScreenDisplay - Main container component for the big screen.
  *
- * Full-screen dark gradient background layout optimized for 1920x1080+
- * displays (TV/projector).  Contains:
+ * 1920×1080 stage layout (TV/projector). ScreenStage scales and centers
+ * this canvas to the real window so smaller or odd-ratio screens still fit.
+ * Contains:
  * - Game title at top with animated glow
  * - Round indicator
  * - Phase-based content area (large center area)
@@ -310,7 +311,7 @@ export function ScreenDisplay() {
 
   return (
     <div
-      className="relative flex h-screen w-screen flex-col overflow-hidden text-slate-100"
+      className="relative flex h-full w-full flex-col overflow-hidden text-slate-100"
       style={{
         background:
           'radial-gradient(ellipse at top, #1a1a2e 0%, #0f0f1e 50%, #050510 100%)',
