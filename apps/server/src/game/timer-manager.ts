@@ -13,8 +13,8 @@ import type { Room } from './room.js';
  * and setTimeout for one-shot delay timers (phase transitions).
  *
  * Timer keys:
- * - 'number_selection': The 15-second number selection countdown
- * - 'gem_pick_{playerId}': The 5-second gem pick countdown for a specific player
+ * - 'number_selection': The number selection countdown
+ * - 'gem_pick_{playerId}': The gem pick countdown for a specific player
  * - arbitrary keys for delay timers (e.g. 'gem_reveal', 'number_reveal', etc.)
  *
  * Pause/Resume:
@@ -36,7 +36,7 @@ export class TimerManager {
     | null = null;
 
   // ------------------------------------------------------------------------
-  // Number selection timer (15 seconds)
+  // Number selection timer
   // ------------------------------------------------------------------------
 
   /**
@@ -85,7 +85,7 @@ export class TimerManager {
   }
 
   // ------------------------------------------------------------------------
-  // Gem pick timer (5 seconds per player)
+  // Gem pick timer
   // ------------------------------------------------------------------------
 
   /**

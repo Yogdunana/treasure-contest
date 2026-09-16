@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Gem, Player } from '@treasure-contest/shared';
-import { INITIAL_NUMBERS } from '@treasure-contest/shared';
+import { INITIAL_NUMBERS, TIMING_CONFIG } from '@treasure-contest/shared';
 import { Room } from './room.js';
 import { GameEngine } from './game-engine.js';
 import { TimerManager } from './timer-manager.js';
@@ -59,7 +59,7 @@ describe('GameEngine pause/resume and skip', () => {
     engine.resume();
     expect(room.phase).toBe('NUMBER_SELECTION');
 
-    vi.advanceTimersByTime(16_000);
+    vi.advanceTimersByTime(TIMING_CONFIG.NUMBER_SELECTION_SECONDS * 1000 + 1000);
     expect(room.phase).toBe('NUMBER_REVEAL');
   });
 
@@ -69,14 +69,19 @@ describe('GameEngine pause/resume and skip', () => {
     const timers = new TimerManager();
     const engine = new GameEngine(room, timers, () => {});
 
-    timers.startPausableDelay(room, 'gem_reveal', 3000, () => {});
+    timers.startPausableDelay(
+      room,
+      'gem_reveal',
+      TIMING_CONFIG.GEM_REVEAL_DELAY_MS,
+      () => {},
+    );
 
     engine.pause();
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_REVEAL_DELAY_MS);
     expect(room.phase).toBe('PAUSED');
 
     engine.resume();
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_REVEAL_DELAY_MS);
     expect(room.phase).toBe('NUMBER_SELECTION');
   });
 
@@ -115,6 +120,49 @@ describe('GameEngine pause/resume and skip', () => {
     expect(room.phase).toBe('GEM_SELECTION');
     expect(room.currentPickerIndex).toBe(1);
     expect(room.getCurrentPickerId()).toBe('p2');
+    timers.clearAll();
+  });
+
+  it('holds auto-advance pages for the configured delays', () => {
+    const room = new Room('SLOW', 'Host', 'token', 4);
+    room.players.set('p1', makePlayer('p1', 'A', 1));
+    room.players.set('p2', makePlayer('p2', 'B', 2));
+    room.players.set('p3', makePlayer('p3', 'C', 3));
+    room.players.set('p4', makePlayer('p4', 'D', 4));
+
+    const timers = new TimerManager();
+    const engine = new GameEngine(room, timers, () => {});
+    engine.startRound();
+    expect(room.phase).toBe('GEM_REVEAL');
+
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_REVEAL_DELAY_MS - 1);
+    expect(room.phase).toBe('GEM_REVEAL');
+    vi.advanceTimersByTime(1);
+    expect(room.phase).toBe('NUMBER_SELECTION');
+
+    engine.onNumberSubmitted('p1', 7);
+    engine.onNumberSubmitted('p2', 6);
+    engine.onNumberSubmitted('p3', 5);
+    expect(room.phase).toBe('NUMBER_SELECTION');
+    engine.onNumberSubmitted('p4', 4);
+    expect(room.phase).toBe('NUMBER_REVEAL');
+
+    vi.advanceTimersByTime(TIMING_CONFIG.NUMBER_REVEAL_DELAY_MS - 1);
+    expect(room.phase).toBe('NUMBER_REVEAL');
+    vi.advanceTimersByTime(1);
+    expect(room.phase).toBe('ORDER_CALCULATION');
+
+    vi.advanceTimersByTime(TIMING_CONFIG.ORDER_CALC_DELAY_MS - 1);
+    expect(room.phase).toBe('ORDER_CALCULATION');
+    vi.advanceTimersByTime(1);
+    expect(room.phase).toBe('GEM_SELECTION');
+
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_PICK_SECONDS_PER_PLAYER * 1000 - 1);
+    expect(room.phase).toBe('GEM_SELECTION');
+    expect(room.getCurrentPickerId()).toBe('p1');
+    vi.advanceTimersByTime(1);
+    expect(room.getCurrentPickerId()).toBe('p2');
+
     timers.clearAll();
   });
 });

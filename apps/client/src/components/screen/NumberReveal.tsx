@@ -8,7 +8,7 @@
  *
  * - "⚡ 撞号" indicators for 2-3 player collisions
  * - "🚨 流局!" for 4+ player voids
- * - 5-second display (server auto-advances)
+ * - Display duration comes from NUMBER_REVEAL_DELAY_MS (server auto-advances)
  */
 
 import { motion } from 'framer-motion';

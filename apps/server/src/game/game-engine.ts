@@ -107,7 +107,7 @@ export class GameEngine {
   }
 
   /**
-   * Transition to NUMBER_SELECTION and start the 15-second countdown.
+   * Transition to NUMBER_SELECTION and start the number-selection countdown.
    */
   private startNumberSelectionPhase(): void {
     stateMachine.startNumberSelection(this.room);
