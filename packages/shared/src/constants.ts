@@ -6,19 +6,19 @@ import type { GemColor } from './types/game.js';
 
 export const TIMING_CONFIG = {
   /** Time limit for number selection phase (seconds). */
-  NUMBER_SELECTION_SECONDS: 15,
+  NUMBER_SELECTION_SECONDS: 20,
   /** Time allotted per player for gem picking (seconds). */
-  GEM_PICK_SECONDS_PER_PLAYER: 5,
+  GEM_PICK_SECONDS_PER_PLAYER: 8,
   /** Delay after gems are revealed before proceeding (ms). */
-  GEM_REVEAL_DELAY_MS: 3000,
+  GEM_REVEAL_DELAY_MS: 7000,
   /** Delay after numbers are revealed before order calculation (ms). */
-  NUMBER_REVEAL_DELAY_MS: 5000,
+  NUMBER_REVEAL_DELAY_MS: 8000,
   /** Delay for order calculation processing (ms). */
-  ORDER_CALC_DELAY_MS: 3000,
+  ORDER_CALC_DELAY_MS: 5000,
   /** Delay at the end of each round before starting the next (ms). */
-  ROUND_END_DELAY_MS: 5000,
+  ROUND_END_DELAY_MS: 8000,
   /** Interval between final result reveals (ms). */
-  FINAL_REVEAL_INTERVAL_MS: 2000,
+  FINAL_REVEAL_INTERVAL_MS: 2500,
 } as const;
 
 // ============================================================================

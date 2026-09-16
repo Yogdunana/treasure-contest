@@ -5,7 +5,7 @@
  * a scale+rotate effect, is large and prominent with glow effects, and
  * displays color + value clearly.
  *
- * The server auto-advances after the GEM_REVEAL_DELAY_MS (3 seconds),
+ * The server auto-advances after GEM_REVEAL_DELAY_MS,
  * so no client-side timer is needed.
  */
 

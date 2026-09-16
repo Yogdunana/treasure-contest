@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Gem, Player } from '@treasure-contest/shared';
-import { INITIAL_NUMBERS } from '@treasure-contest/shared';
+import { INITIAL_NUMBERS, TIMING_CONFIG } from '@treasure-contest/shared';
 import { Room } from './room.js';
 import { GameEngine } from './game-engine.js';
 import { TimerManager } from './timer-manager.js';
@@ -59,7 +59,7 @@ describe('GameEngine pause/resume and skip', () => {
     engine.resume();
     expect(room.phase).toBe('NUMBER_SELECTION');
 
-    vi.advanceTimersByTime(16_000);
+    vi.advanceTimersByTime(TIMING_CONFIG.NUMBER_SELECTION_SECONDS * 1000 + 1000);
     expect(room.phase).toBe('NUMBER_REVEAL');
   });
 
@@ -69,14 +69,19 @@ describe('GameEngine pause/resume and skip', () => {
     const timers = new TimerManager();
     const engine = new GameEngine(room, timers, () => {});
 
-    timers.startPausableDelay(room, 'gem_reveal', 3000, () => {});
+    timers.startPausableDelay(
+      room,
+      'gem_reveal',
+      TIMING_CONFIG.GEM_REVEAL_DELAY_MS,
+      () => {},
+    );
 
     engine.pause();
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_REVEAL_DELAY_MS);
     expect(room.phase).toBe('PAUSED');
 
     engine.resume();
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(TIMING_CONFIG.GEM_REVEAL_DELAY_MS);
     expect(room.phase).toBe('NUMBER_SELECTION');
   });
 
