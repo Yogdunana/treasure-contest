@@ -15,6 +15,7 @@ import {
   GEMS_PER_ROUND,
   COLLISION_VOID_THRESHOLD,
   MISSION_REWARDS,
+  isBriefingPhase,
 } from '@treasure-contest/shared';
 import {
   generateGems,
@@ -54,7 +55,7 @@ export interface StateResult {
  *
  * Actions:
  * - Deal 3 missions (1 easy + 1 medium + 1 hard) to each player
- * - Transition LOBBY -> GAME_INIT
+ * - Transition LOBBY -> RULES_BRIEFING (phones show rules first)
  */
 export function startGame(room: Room): StateResult {
   if (!validatePhase(room.phase, 'LOBBY')) {
@@ -72,15 +73,15 @@ export function startGame(room: Room): StateResult {
     };
   }
 
-  // Deal missions to each player
+  // Deal missions to each player (phones only receive them after rules).
   for (const player of room.players.values()) {
     player.missions = dealMissions();
     player.finalScore = 0;
     player.finalRank = null;
+    player.isReady = false;
   }
 
-  // Transition to GAME_INIT
-  room.phase = 'GAME_INIT';
+  room.phase = 'RULES_BRIEFING';
   room.currentRound = 0;
   room.roundHistory = [];
   room.finalResults = [];
@@ -91,9 +92,55 @@ export function startGame(room: Room): StateResult {
 }
 
 /**
+ * A player finished reading the current briefing page (rules or missions).
+ */
+export function confirmBriefing(room: Room, playerId: string): StateResult {
+  if (!isBriefingPhase(room.phase)) {
+    return {
+      success: false,
+      error: `Cannot confirm briefing: room is in ${room.phase} phase`,
+    };
+  }
+
+  const player = room.players.get(playerId);
+  if (!player) {
+    return { success: false, error: 'Player not found' };
+  }
+
+  if (!player.isConnected) {
+    return { success: false, error: 'Player is not connected' };
+  }
+
+  player.isReady = true;
+  return { success: true };
+}
+
+/**
+ * True when every connected seated player has confirmed the current briefing.
+ */
+export function checkAllBriefingReady(room: Room): boolean {
+  if (!isBriefingPhase(room.phase)) return false;
+  const connectedPlayers = room.getConnectedPlayers();
+  if (connectedPlayers.length === 0) return false;
+  return connectedPlayers.every((p) => p.isReady);
+}
+
+/**
+ * RULES_BRIEFING -> MISSION_BRIEFING. Reset ready flags so everyone
+ * must confirm they have read their own missions.
+ */
+export function beginMissionBriefing(room: Room): void {
+  if (room.phase !== 'RULES_BRIEFING' && room.phase !== 'GAME_INIT') return;
+  for (const player of room.players.values()) {
+    player.isReady = false;
+  }
+  room.phase = 'MISSION_BRIEFING';
+}
+
+/**
  * Start a new round: generate gems, reset per-round state.
  *
- * Transitions GAME_INIT / ROUND_END -> ROUND_START.
+ * Transitions MISSION_BRIEFING / ROUND_END -> ROUND_START.
  * - Increments currentRound (or sets to 1 if 0)
  * - Generates 4 gems for the round
  * - Resets selection order, collision groups, voided numbers, revealed numbers
@@ -120,6 +167,7 @@ export function startRound(room: Room): void {
   // Reset each player's round submission
   for (const player of room.players.values()) {
     player.roundSubmission = null;
+    player.isReady = false;
   }
 
   // Transition to ROUND_START
@@ -416,6 +464,8 @@ export function endRound(room: Room): void {
     calculateRound3Ranking(room);
   }
 
+  refreshMissionProgress(room);
+
   room.phase = 'ROUND_END';
 }
 
@@ -433,6 +483,24 @@ export function calculateRound3Ranking(room: Room): void {
   playersWithScores.sort((a, b) => b.baseScore - a.baseScore);
 
   room.round3Ranking = playersWithScores.map((p) => p.playerId);
+}
+
+/**
+ * Re-evaluate each player's missions with the current board.
+ * Live progress is shown on phones; H09 still needs final ranks later.
+ */
+export function refreshMissionProgress(room: Room): void {
+  const finalRanksMap = new Map<string, number>();
+  for (const result of room.finalResults) {
+    finalRanksMap.set(result.playerId, result.finalRank);
+  }
+  for (const player of room.players.values()) {
+    if (player.missions.length === 0) continue;
+    const context = buildMissionCheckContext(room, player, finalRanksMap, {
+      includeCurrentRound: true,
+    });
+    player.missions = checkMissions(context, player.missions);
+  }
 }
 
 /**
@@ -549,11 +617,15 @@ export function calculateFinalScores(room: Room): void {
 
 /**
  * Build the MissionCheckContext for a player from the room's round history.
+ *
+ * When `includeCurrentRound` is set, gems already picked this round (before
+ * history is recorded) also count, so phones can show live mission progress.
  */
 function buildMissionCheckContext(
   room: Room,
   player: Player,
   finalRanksMap: Map<string, number>,
+  options?: { includeCurrentRound?: boolean },
 ): MissionCheckContext {
   const playerGems = player.gems;
   const playerBaseScore = calculateBaseScore(playerGems);
@@ -579,6 +651,32 @@ function buildMissionCheckContext(
     if (gotGem) roundsWithGems++;
   }
 
+  const historyHasCurrentRound = room.roundHistory.some(
+    (rh) => rh.round === room.currentRound,
+  );
+  const viewPhase = room.getViewPhase();
+  const canCountCurrentRound =
+    Boolean(options?.includeCurrentRound) &&
+    !historyHasCurrentRound &&
+    room.currentRound > 0 &&
+    (viewPhase === 'GEM_SELECTION' ||
+      viewPhase === 'ROUND_END' ||
+      viewPhase === 'FINAL_CALCULATION' ||
+      viewPhase === 'RESULTS_REVEAL' ||
+      viewPhase === 'GAME_OVER');
+
+  if (canCountCurrentRound) {
+    roundSubmissions.push(player.roundSubmission);
+    const pickedGem = room.currentGems.find((g) => g.pickedBy === player.id);
+    const gotGem = pickedGem !== undefined;
+    roundGemResults.push({
+      round: room.currentRound,
+      gotGem,
+      ...(pickedGem !== undefined ? { gem: pickedGem } : {}),
+    });
+    if (gotGem) roundsWithGems++;
+  }
+
   // Round 3 base score rank
   const round3BaseScoreRank =
     room.round3Ranking.length > 0
@@ -597,6 +695,16 @@ function buildMissionCheckContext(
     )?.gotGem;
 
     if (inNonVoidedCollision && gotGemInRound) {
+      collisionWins++;
+    }
+  }
+
+  if (canCountCurrentRound) {
+    const inNonVoidedCollision = room.collisionGroups.some(
+      (cg) => !cg.isVoided && cg.playerIds.includes(player.id),
+    );
+    const gotGemThisRound = room.currentGems.some((g) => g.pickedBy === player.id);
+    if (inNonVoidedCollision && gotGemThisRound) {
       collisionWins++;
     }
   }

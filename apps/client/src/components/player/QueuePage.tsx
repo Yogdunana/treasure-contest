@@ -22,6 +22,9 @@ import { fadeIn, scaleIn, slideUp, staggerContainer } from '../../animations/var
 function phaseLabel(phase: GamePhase): string {
   const labels: Partial<Record<GamePhase, string>> = {
     LOBBY: '等待开始',
+    GAME_INIT: '规则说明',
+    RULES_BRIEFING: '规则说明',
+    MISSION_BRIEFING: '阅读任务',
     GEM_REVEAL: '展示宝石',
     NUMBER_SELECTION: '选数字中',
     NUMBER_REVEAL: '数字揭晓',

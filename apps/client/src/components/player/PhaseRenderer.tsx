@@ -30,6 +30,8 @@ import { WaitingForTurn } from './WaitingForTurn';
 import { RoundSummary } from './RoundSummary';
 import { FinalResults } from './FinalResults';
 import { WaitingRoom } from './WaitingRoom';
+import { RulesBriefing } from './RulesBriefing';
+import { MissionBriefing } from './MissionBriefing';
 
 /** Brief loading state for transient phases. */
 function PhaseTransition({ label }: { label: string }) {
@@ -118,6 +120,14 @@ export function PhaseRenderer() {
       break;
 
     case 'GAME_INIT':
+    case 'RULES_BRIEFING':
+      content = <RulesBriefing />;
+      break;
+
+    case 'MISSION_BRIEFING':
+      content = <MissionBriefing />;
+      break;
+
     case 'ROUND_START':
       content = <PhaseTransition label="准备开始..." />;
       break;

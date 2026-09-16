@@ -304,7 +304,7 @@ function handleCreateRoom(
  * Verifies host identity, then calls `gameEngine.startGame()` which:
  * 1. Validates minimum players are connected.
  * 2. Deals missions to all players.
- * 3. Transitions LOBBY → GAME_INIT → first round.
+ * 3. Transitions LOBBY → RULES_BRIEFING (players confirm rules, then missions).
  *
  * The engine broadcasts the updated state internally.
  */

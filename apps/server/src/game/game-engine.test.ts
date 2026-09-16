@@ -165,6 +165,35 @@ describe('GameEngine pause/resume and skip', () => {
 
     timers.clearAll();
   });
+
+  it('waits in RULES_BRIEFING instead of jumping into round 1', () => {
+    const room = new Room('BRF', 'Host', 'token', 4);
+    room.players.set('p1', makePlayer('p1', 'A', 1));
+    room.players.set('p2', makePlayer('p2', 'B', 2));
+    room.players.set('p3', makePlayer('p3', 'C', 3));
+    room.players.set('p4', makePlayer('p4', 'D', 4));
+
+    const engine = new GameEngine(room, new TimerManager(), () => {});
+    engine.startGame();
+    expect(room.phase).toBe('RULES_BRIEFING');
+    expect(room.currentRound).toBe(0);
+
+    engine.onBriefingConfirmed('p1');
+    engine.onBriefingConfirmed('p2');
+    engine.onBriefingConfirmed('p3');
+    expect(room.phase).toBe('RULES_BRIEFING');
+
+    engine.onBriefingConfirmed('p4');
+    expect(room.phase).toBe('MISSION_BRIEFING');
+    expect(room.toPlayerPrivateState('p1')?.missions).toHaveLength(3);
+
+    engine.onBriefingConfirmed('p1');
+    engine.onBriefingConfirmed('p2');
+    engine.onBriefingConfirmed('p3');
+    engine.onBriefingConfirmed('p4');
+    expect(room.phase).toBe('GEM_REVEAL');
+    expect(room.currentRound).toBe(1);
+  });
 });
 
 function resetDb(): void {

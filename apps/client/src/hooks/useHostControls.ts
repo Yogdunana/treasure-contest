@@ -3,7 +3,7 @@
  *
  * Wraps the typed socket client to emit all host-facing events:
  * - `host:create_room`       — create a new room with a target player count
- * - `host:start_game`        — start the game (LOBBY → GAME_INIT)
+ * - `host:start_game`        — start the game (LOBBY → RULES_BRIEFING)
  * - `host:pause` / `host:resume` — pause / resume the game
  * - `host:advance_phase`     — manually advance to the next phase
  * - `host:skip_player`       — skip the current picker

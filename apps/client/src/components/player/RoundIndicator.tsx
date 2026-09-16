@@ -6,13 +6,15 @@
  */
 
 import { useGameStore } from '../../store/game-store';
-import { TOTAL_ROUNDS } from '@treasure-contest/shared';
+import { TOTAL_ROUNDS, isBriefingPhase } from '@treasure-contest/shared';
 
 export function RoundIndicator() {
   const currentRound = useGameStore((s) => s.currentRound);
   const phase = useGameStore((s) => s.phase);
   const notStarted =
-    currentRound <= 0 || phase === 'LOBBY' || phase === 'GAME_INIT';
+    currentRound <= 0 ||
+    phase === 'LOBBY' ||
+    isBriefingPhase(phase);
   const displayRound = currentRound > 0 ? currentRound : 0;
   const progress = notStarted ? 0 : (currentRound / TOTAL_ROUNDS) * 100;
 

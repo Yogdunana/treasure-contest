@@ -29,12 +29,17 @@ export interface UsePlayerActionsReturn {
    *          (socket disconnected or not the player's turn).
    */
   selectGem: (gemId: string) => boolean;
+  /**
+   * Confirm that the player finished reading rules or missions.
+   */
+  confirmBriefing: () => boolean;
 }
 
 export function usePlayerActions(): UsePlayerActionsReturn {
   const isConnected = useSocketStore((s) => s.isConnected);
   const pendingNumberRef = useRef(false);
   const pendingGemRef = useRef(false);
+  const pendingBriefingRef = useRef(false);
 
   const submitNumber = useCallback(
     (number: number): boolean => {
@@ -75,7 +80,29 @@ export function usePlayerActions(): UsePlayerActionsReturn {
     [isConnected],
   );
 
-  return { submitNumber, selectGem };
+  const confirmBriefing = useCallback((): boolean => {
+    if (!isConnected) return false;
+    const state = useGameStore.getState();
+    if (
+      state.phase !== 'RULES_BRIEFING' &&
+      state.phase !== 'MISSION_BRIEFING' &&
+      state.phase !== 'GAME_INIT'
+    ) {
+      return false;
+    }
+    const me = state.playerSeats.find((seat) => seat.playerId === state.playerId);
+    if (me?.isReady) return false;
+    if (pendingBriefingRef.current) return false;
+
+    pendingBriefingRef.current = true;
+    socket.emit('action:confirm_briefing');
+    window.setTimeout(() => {
+      pendingBriefingRef.current = false;
+    }, 800);
+    return true;
+  }, [isConnected]);
+
+  return { submitNumber, selectGem, confirmBriefing };
 }
 
 export default usePlayerActions;

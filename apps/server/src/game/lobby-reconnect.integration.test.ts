@@ -476,6 +476,10 @@ describe('screen lifecycle and post-game restart', () => {
 
     host.emit('host:start_game');
     await new Promise((r) => setTimeout(r, 80));
+    host.emit('host:advance_phase');
+    await new Promise((r) => setTimeout(r, 40));
+    host.emit('host:advance_phase');
+    await new Promise((r) => setTimeout(r, 80));
 
     const screen = await connectClient();
     const firstSync = nextScreenSync(screen);

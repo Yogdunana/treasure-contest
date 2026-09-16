@@ -51,19 +51,16 @@ export function RoundEnd() {
   const gems = useGameStore((s) => s.gems);
   const playerSeats = useGameStore((s) => s.playerSeats);
 
-  // Build player scores from the current round's gems
+  // Full collections come from public seats; this-round picks still come
+  // from the board so "本轮" stays obvious.
   const playerScores: PlayerScore[] = playerSeats.map((seat) => {
-    // Get gems picked by this player in the current round
     const roundGems = gems.filter((g) => g.pickedBy === seat.playerId);
-
-    // For the big screen, we only have access to the current round's gems
-    // The base score is the sum of this round's gem values
-    // (Historical scores aren't available to the screen role)
-    const baseScore = roundGems.reduce((sum, g) => sum + g.value, 0);
+    const allGems = seat.gems;
+    const baseScore = allGems.reduce((sum, g) => sum + g.value, 0);
 
     return {
       seat,
-      gems: roundGems,
+      gems: allGems,
       baseScore,
       roundGems,
     };
@@ -146,29 +143,36 @@ export function RoundEnd() {
               {player.seat.seatNumber}
             </div>
 
-            {/* Player name */}
-            <div className="flex-1">
+            {/* Player name + all gems */}
+            <div className="min-w-0 flex-1">
               <p className="text-xl font-bold text-slate-100">
                 {player.seat.name}
               </p>
-              {/* Round gems */}
-              <div className="mt-1 flex items-center gap-2">
-                {player.roundGems.length > 0 ? (
-                  player.roundGems.map((gem) => (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {player.gems.length > 0 ? (
+                  player.gems.map((gem) => (
                     <div
                       key={gem.id}
-                      className="flex items-center gap-1 rounded-lg bg-slate-700/50 px-2 py-1"
+                      className={clsx(
+                        'flex items-center gap-1 rounded-lg px-2 py-1',
+                        player.roundGems.some((g) => g.id === gem.id)
+                          ? 'bg-amber-900/40 ring-1 ring-amber-500/40'
+                          : 'bg-slate-700/50',
+                      )}
                     >
                       <GemIcon color={gem.color} size={24} variant="emoji" />
-                      <span className="text-sm text-slate-300">
-                        {GEM_COLOR_LABELS[gem.color]} +{gem.value}
+                      <span className="text-sm text-slate-200">
+                        {GEM_COLOR_LABELS[gem.color]} {gem.value}
                       </span>
                     </div>
                   ))
                 ) : (
-                  <span className="text-sm text-slate-600">本轮未获得宝石</span>
+                  <span className="text-sm text-slate-600">尚未获得宝石</span>
                 )}
               </div>
+              {player.roundGems.length === 0 && (
+                <p className="mt-1 text-xs text-slate-600">本轮未获得宝石</p>
+              )}
             </div>
 
             {/* Score */}
@@ -186,7 +190,7 @@ export function RoundEnd() {
                 {player.baseScore}
               </motion.p>
               <p className="text-sm text-slate-500">
-                {player.roundGems.length} 颗宝石
+                {player.gems.length} 颗 · 累计
               </p>
             </div>
           </motion.div>

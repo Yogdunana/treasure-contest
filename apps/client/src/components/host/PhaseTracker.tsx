@@ -19,7 +19,9 @@ import {
 /** Chinese labels for each game phase. */
 const PHASE_LABELS: Record<GamePhase, string> = {
   LOBBY: '大厅等待',
-  GAME_INIT: '游戏初始化',
+  GAME_INIT: '规则说明',
+  RULES_BRIEFING: '规则说明',
+  MISSION_BRIEFING: '阅读任务',
   ROUND_START: '回合开始',
   GEM_REVEAL: '宝石展示',
   NUMBER_SELECTION: '数字选择',

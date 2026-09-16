@@ -80,7 +80,8 @@ export interface Player {
 
 /**
  * Lightweight public seat info for display on the big screen and lobby.
- * Contains no secret information.
+ * Contains no secret information (no unused numbers or missions).
+ * Collected gems are public so the projector can show who owns what.
  */
 export interface PlayerSeat {
   playerId: string;
@@ -88,6 +89,7 @@ export interface PlayerSeat {
   seatNumber: number;
   isConnected: boolean;
   isReady: boolean;
+  gems: Gem[];
 }
 
 // ============================================================================

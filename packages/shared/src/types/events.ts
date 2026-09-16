@@ -233,6 +233,8 @@ export interface ClientToServerEvents {
   'queue:leave': () => void;
   'action:submit_number': (payload: SubmitNumberPayload) => void;
   'action:select_gem': (payload: SelectGemPayload) => void;
+  /** Confirm that the player has finished reading rules or missions. */
+  'action:confirm_briefing': () => void;
   'host:create_room': (
     payload: CreateRoomPayload,
     callback?: (response: CreateRoomAck) => void,

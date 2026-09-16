@@ -146,6 +146,22 @@ function PlayerCard({
           </span>
         </div>
       )}
+      {(phase === 'RULES_BRIEFING' ||
+        phase === 'MISSION_BRIEFING' ||
+        phase === 'GAME_INIT') && (
+        <div className="mb-2 flex items-center justify-center">
+          <span
+            className={clsx(
+              'rounded-lg px-3 py-1 text-[11px] font-semibold',
+              player.isReady
+                ? 'bg-emerald-900/40 text-emerald-300'
+                : 'bg-slate-700 text-slate-400',
+            )}
+          >
+            {player.isReady ? '已确认' : '阅读中'}
+          </span>
+        </div>
+      )}
 
       {/* Numbers */}
       <div className="mb-2 space-y-1">
@@ -194,17 +210,21 @@ function PlayerCard({
           <span className="text-xs font-bold text-slate-300">{player.gems.length}</span>
           {player.gems.length > 0 && (
             <div className="flex">
-              {player.gems.slice(0, 5).map((gem, i) => (
-                <GemIcon
-                  key={gem.id}
-                  color={gem.color}
-                  variant="emoji"
-                  size={12}
-                />
+              {player.gems.slice(0, 6).map((gem) => (
+                <span key={gem.id} className="inline-flex items-center gap-0.5">
+                  <GemIcon
+                    color={gem.color}
+                    variant="emoji"
+                    size={12}
+                  />
+                  <span className="text-[9px] font-bold text-slate-300">
+                    {gem.value}
+                  </span>
+                </span>
               ))}
-              {player.gems.length > 5 && (
+              {player.gems.length > 6 && (
                 <span className="text-[9px] text-slate-500">
-                  +{player.gems.length - 5}
+                  +{player.gems.length - 6}
                 </span>
               )}
             </div>

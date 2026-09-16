@@ -40,7 +40,9 @@ import {
 /** Chinese label for each game phase (compact form for the header). */
 const PHASE_SHORT: Record<string, string> = {
   LOBBY: '等待中',
-  GAME_INIT: '初始化',
+  GAME_INIT: '规则说明',
+  RULES_BRIEFING: '规则说明',
+  MISSION_BRIEFING: '阅读任务',
   ROUND_START: '回合开始',
   GEM_REVEAL: '宝石展示',
   NUMBER_SELECTION: '数字选择',

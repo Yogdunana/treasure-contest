@@ -34,6 +34,7 @@ import {
 } from '../../components/player';
 import {
   ErrorCodes,
+  isBriefingPhase,
   type ErrorPayload,
 } from '@treasure-contest/shared';
 import { fadeIn } from '../../animations/variants';
@@ -249,7 +250,8 @@ export default function PlayerGamePage() {
           <PhaseRenderer />
         </div>
 
-        {/* Bottom panel: score / gems / missions */}
+        {/* Bottom panel: score / gems / missions — hidden while reading briefing */}
+        {!isBriefingPhase(phase) && (
         <div className="mt-4 border-t border-slate-800 pt-3">
           {/* Tab buttons */}
           <div className="mb-2 flex gap-1">
@@ -284,6 +286,7 @@ export default function PlayerGamePage() {
             </motion.div>
           </AnimatePresence>
         </div>
+        )}
       </div>
     </div>
   );
