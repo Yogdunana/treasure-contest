@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { io as ioc, type Socket as ClientSocket } from 'socket.io-client';
-import type { CreateRoomAck, RoomJoinAck } from '@treasure-contest/shared';
+import type { CreateRoomAck, ErrorPayload, QueuePromotedPayload, RoomJoinAck } from '@treasure-contest/shared';
 import { closeDb, initDb } from '../db/connection.js';
 import { initDatabase } from '../db/migrations.js';
 import { createApp } from '../app.js';
@@ -523,6 +523,142 @@ describe('screen lifecycle and post-game restart', () => {
 
     host.disconnect();
     refreshed.disconnect();
+    for (const s of players) s.disconnect();
+  });
+
+  it('kicks a seated player and auto-promotes the next queued player', async () => {
+    const { host, roomCode } = await createHostRoom();
+    const seated: { socket: ClientSocket; ack: RoomJoinAck }[] = [];
+    for (const name of ['Alice', 'Bob', 'Cara', 'Dan']) {
+      const socket = await connectClient();
+      const ack = await new Promise<RoomJoinAck>((resolve) => {
+        socket.emit('room:join', { roomCode, playerName: name, role: 'player' }, resolve);
+      });
+      expect(ack.success).toBe(true);
+      seated.push({ socket, ack });
+    }
+
+    const eve = await connectClient();
+    const eveAck = await new Promise<RoomJoinAck>((resolve) => {
+      eve.emit('room:join', { roomCode, playerName: 'Eve', role: 'player' }, resolve);
+    });
+    expect(eveAck.success).toBe(true);
+    expect(eveAck.queued).toBe(true);
+
+    const kicked = new Promise<ErrorPayload>((resolve) => {
+      seated[0]!.socket.on('error', resolve);
+    });
+    const promoted = new Promise<QueuePromotedPayload>((resolve) => {
+      eve.on('queue:promoted', resolve);
+    });
+    const namesAfter = new Promise<string[]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no matching host state')), 2000);
+      const onSync = (snap: {
+        role?: string;
+        hostState?: { allPlayers: { name: string }[] };
+      }) => {
+        if (snap.role !== 'host' || !snap.hostState) return;
+        const names = snap.hostState.allPlayers.map((p) => p.name);
+        if (!names.includes('Eve') || names.includes('Alice')) return;
+        clearTimeout(timer);
+        host.off('state:sync', onSync);
+        resolve(names);
+      };
+      host.on('state:sync', onSync);
+    });
+
+    host.emit('host:kick_player', { playerId: seated[0]!.ack.playerId });
+
+    expect((await kicked).code).toBe('KICKED');
+    expect(await promoted).toMatchObject({ seatNumber: expect.any(Number) });
+    const names = await namesAfter;
+    expect(names).toHaveLength(4);
+    expect(names).toEqual(expect.arrayContaining(['Bob', 'Cara', 'Dan', 'Eve']));
+
+    host.disconnect();
+    eve.disconnect();
+    for (const s of seated) s.socket.disconnect();
+  });
+
+  it('can kick an already-disconnected seat so a queued player can sit', async () => {
+    const { host, roomCode } = await createHostRoom();
+    const alice = await connectClient();
+    const aliceAck = await new Promise<RoomJoinAck>((resolve) => {
+      alice.emit('room:join', { roomCode, playerName: 'Alice', role: 'player' }, resolve);
+    });
+    expect(aliceAck.success).toBe(true);
+
+    const others: ClientSocket[] = [];
+    for (const name of ['Bob', 'Cara', 'Dan']) {
+      const s = await connectClient();
+      others.push(s);
+      await new Promise<RoomJoinAck>((resolve) => {
+        s.emit('room:join', { roomCode, playerName: name, role: 'player' }, resolve);
+      });
+    }
+
+    const eve = await connectClient();
+    const eveAck = await new Promise<RoomJoinAck>((resolve) => {
+      eve.emit('room:join', { roomCode, playerName: 'Eve', role: 'player' }, resolve);
+    });
+    expect(eveAck.queued).toBe(true);
+
+    alice.disconnect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const promoted = new Promise<QueuePromotedPayload>((resolve) => {
+      eve.on('queue:promoted', resolve);
+    });
+    const namesAfter = new Promise<string[]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no matching host state')), 2000);
+      const onSync = (snap: {
+        role?: string;
+        hostState?: { allPlayers: { name: string }[] };
+      }) => {
+        if (snap.role !== 'host' || !snap.hostState) return;
+        const names = snap.hostState.allPlayers.map((p) => p.name);
+        if (!names.includes('Eve') || names.includes('Alice')) return;
+        clearTimeout(timer);
+        host.off('state:sync', onSync);
+        resolve(names);
+      };
+      host.on('state:sync', onSync);
+    });
+
+    host.emit('host:kick_player', { playerId: aliceAck.playerId });
+    expect(await promoted).toMatchObject({ playerId: expect.any(String) });
+    const names = await namesAfter;
+    expect(names).toContain('Eve');
+    expect(names).not.toContain('Alice');
+
+    host.disconnect();
+    eve.disconnect();
+    for (const s of others) s.disconnect();
+  });
+
+  it('rejects kicking a player after the game has started', async () => {
+    const { host, roomCode } = await createHostRoom();
+    const players: ClientSocket[] = [];
+    let aliceId = '';
+    for (const name of ['Alice', 'Bob', 'Cara', 'Dan']) {
+      const s = await connectClient();
+      players.push(s);
+      const ack = await new Promise<RoomJoinAck>((resolve) => {
+        s.emit('room:join', { roomCode, playerName: name, role: 'player' }, resolve);
+      });
+      if (name === 'Alice') aliceId = ack.playerId ?? '';
+    }
+
+    host.emit('host:start_game');
+    await new Promise((r) => setTimeout(r, 80));
+
+    const err = new Promise<ErrorPayload>((resolve) => {
+      host.on('error', resolve);
+    });
+    host.emit('host:kick_player', { playerId: aliceId });
+    expect((await err).code).toBe('INVALID_ACTION');
+
+    host.disconnect();
     for (const s of players) s.disconnect();
   });
 });

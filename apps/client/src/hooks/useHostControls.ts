@@ -9,6 +9,7 @@
  * - `host:skip_player`       — skip the current picker
  * - `host:promote_player`    — promote a queued player to a full seat
  * - `host:remove_from_queue` — remove a player from the waiting queue
+ * - `host:kick_player`       — remove a seated player during LOBBY
  * - `host:end_game`          — end the game early
  * - `host:restart`           — restart the game (new session, same room)
  *
@@ -43,6 +44,8 @@ export interface UseHostControlsReturn {
   promotePlayer: (queueEntryId: string) => boolean;
   /** Remove a player from the waiting queue. */
   removeFromQueue: (queueEntryId: string) => boolean;
+  /** Kick a seated player during LOBBY (frees the seat, may promote queue). */
+  kickPlayer: (playerId: string) => boolean;
   /** End the game early (goes to GAME_OVER). */
   endGame: () => boolean;
   /** Restart the game (new gameSession, same room). */
@@ -124,6 +127,15 @@ export function useHostControls(): UseHostControlsReturn {
     [isConnected],
   );
 
+  const kickPlayer = useCallback(
+    (playerId: string): boolean => {
+      if (!isConnected) return false;
+      socket.emit('host:kick_player', { playerId });
+      return true;
+    },
+    [isConnected],
+  );
+
   const endGame = useCallback((): boolean => {
     if (!isConnected) return false;
     socket.emit('host:end_game');
@@ -145,6 +157,7 @@ export function useHostControls(): UseHostControlsReturn {
     skipPlayer,
     promotePlayer,
     removeFromQueue,
+    kickPlayer,
     endGame,
     restart,
   };

@@ -1259,7 +1259,7 @@ function handleDisconnect(
  * a new player record is created, and `queue:promoted` is sent to the
  * promoted player. The room is notified via `player:joined`.
  */
-function tryPromoteFromQueue(
+export function tryPromoteFromQueue(
   io: AppServer,
   room: Room,
   roomManager: RoomManager,
