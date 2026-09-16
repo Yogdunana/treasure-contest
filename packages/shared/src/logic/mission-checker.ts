@@ -177,16 +177,13 @@ function checkMissionCondition(
     case 'H04':
       return playerBaseScore >= 45;
 
-    // H05: at least 2 colors with count >= 4
+    // H05: any color count >= 4 (max 6 gems/game, so 4+4 was impossible)
     case 'H05':
-      return countColorsWithAtLeast(colorCounts, 4) >= 2;
+      return countColorsWithAtLeast(colorCounts, 4) >= 1;
 
-    // H06: distinct colors >= 4 AND at least 3 colors with count >= 2
+    // H06: at least 3 colors with count >= 2 (2+2+2 = 6, fits one gem/round)
     case 'H06':
-      return (
-        countDistinctColors(colorCounts) >= 4 &&
-        countColorsWithAtLeast(colorCounts, 2) >= 3
-      );
+      return countColorsWithAtLeast(colorCounts, 2) >= 3;
 
     // H07: total gems >= 6
     case 'H07':

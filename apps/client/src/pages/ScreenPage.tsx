@@ -17,7 +17,7 @@ import { useParams } from 'react-router-dom';
 import { socket } from '../lib/socket-client';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
-import { ScreenDisplay } from '../components/screen';
+import { ScreenDisplay, ScreenStage } from '../components/screen';
 
 function isScreenSnapshotForRoom(roomCode: string): boolean {
   const store = useGameStore.getState();
@@ -140,5 +140,9 @@ export default function ScreenPage() {
     );
   }
 
-  return <ScreenDisplay />;
+  return (
+    <ScreenStage>
+      <ScreenDisplay />
+    </ScreenStage>
+  );
 }

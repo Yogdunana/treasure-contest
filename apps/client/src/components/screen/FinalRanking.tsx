@@ -29,9 +29,7 @@ import {
   championEffect,
   slideIn,
   fadeIn,
-  scaleIn,
   staggerContainer,
-  numberFlip,
 } from '../../animations/variants';
 
 /** Medal emoji for the top 3 ranks. */
@@ -156,7 +154,7 @@ function ResultCard({
   const isWinner = result.finalRank === 1;
   const medal = RANK_MEDALS[result.finalRank] ?? '';
   const baseDelay = (result.finalRank - 1) * (TIMING_CONFIG.FINAL_REVEAL_INTERVAL_MS / 1000);
-  const emphasize = isWinner && soleChampion && !compact;
+  const emphasize = isWinner && soleChampion && !compact && !dense;
 
   return (
     <motion.div
@@ -293,27 +291,30 @@ export function FinalRanking({ compact = false }: { compact?: boolean }) {
   }, [finalResults, compact]);
 
   const soleChampion = finalResults.filter((r) => r.finalRank === 1).length === 1;
-  const dense = compact && sorted.length >= 7;
+  // 7–8 rows on a 1080p stage (minus header, credit, side QR) overflow the
+  // full-size RESULTS_REVEAL cards; shrink both the ceremony and game-over list.
+  const dense = sorted.length >= 7;
 
   return (
     <motion.div
       variants={compact ? undefined : staggerContainer}
-      initial={compact ? false : 'hidden'}
+      initial={false}
       animate="visible"
       className={clsx(
-        'flex w-full flex-col items-center gap-4',
-        compact ? 'justify-center py-1' : 'h-full justify-center',
+        'flex w-full flex-col items-center',
+        compact ? 'justify-center py-1' : 'h-full min-h-0 justify-center overflow-hidden',
+        dense ? 'gap-2' : 'gap-4',
       )}
     >
       {!compact && (
         <motion.div variants={fadeIn} className="shrink-0 text-center">
           <h2
-            className="text-5xl font-bold text-violet-300"
+            className={clsx('font-bold text-violet-300', dense ? 'text-3xl' : 'text-5xl')}
             style={{ textShadow: '0 0 30px rgba(139,92,246,0.6)' }}
           >
             最终排名
           </h2>
-          <p className="mt-2 text-2xl text-slate-400">
+          <p className={clsx('text-slate-400', dense ? 'mt-1 text-lg' : 'mt-2 text-2xl')}>
             秘宝争夺战圆满结束
           </p>
         </motion.div>
