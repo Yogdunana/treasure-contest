@@ -29,6 +29,8 @@ import { useSocketStore } from '../../store/socket-store';
 import { TOTAL_ROUNDS, type GamePhase } from '@treasure-contest/shared';
 import { fadeIn } from '../../animations/variants';
 import { LobbyScreen } from './LobbyScreen';
+import { RulesScreen } from './RulesScreen';
+import { PlayerCollections } from './PlayerCollections';
 import { GemReveal } from './GemReveal';
 import { NumberSelection } from './NumberSelection';
 import { NumberReveal } from './NumberReveal';
@@ -43,7 +45,9 @@ import { PausedOverlay } from './PausedOverlay';
 /** Chinese label for each game phase. */
 const PHASE_LABEL: Record<GamePhase, string> = {
   LOBBY: '等待中',
-  GAME_INIT: '初始化',
+  GAME_INIT: '规则说明',
+  RULES_BRIEFING: '规则说明',
+  MISSION_BRIEFING: '阅读任务',
   ROUND_START: '回合开始',
   GEM_REVEAL: '宝石展示',
   NUMBER_SELECTION: '数字选择',
@@ -92,6 +96,11 @@ function PhaseContent() {
     case 'LOBBY':
       return <LobbyScreen />;
 
+    case 'GAME_INIT':
+    case 'RULES_BRIEFING':
+    case 'MISSION_BRIEFING':
+      return <RulesScreen />;
+
     case 'GEM_REVEAL':
       return <GemReveal />;
 
@@ -116,7 +125,6 @@ function PhaseContent() {
     case 'GAME_OVER':
       return <GameOverScreen />;
 
-    case 'GAME_INIT':
     case 'ROUND_START':
       return <PhaseTransition label="准备开始..." />;
 
@@ -138,7 +146,13 @@ function RoundDisplay() {
   const phase = useGameStore((s) => s.phase);
 
   // Don't show round during lobby or game over
-  if (phase === 'LOBBY' || phase === 'GAME_OVER' || phase === 'GAME_INIT') {
+  if (
+    phase === 'LOBBY' ||
+    phase === 'GAME_OVER' ||
+    phase === 'GAME_INIT' ||
+    phase === 'RULES_BRIEFING' ||
+    phase === 'MISSION_BRIEFING'
+  ) {
     return null;
   }
 
@@ -400,6 +414,8 @@ export function ScreenDisplay() {
           />
         )}
       </div>
+
+      <PlayerCollections />
 
       <CreditLine />
 

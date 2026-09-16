@@ -38,3 +38,7 @@ export { RoundSummary } from './RoundSummary';
 export { FinalResults } from './FinalResults';
 
 export { WaitingRoom } from './WaitingRoom';
+
+export { RulesBriefing } from './RulesBriefing';
+
+export { MissionBriefing } from './MissionBriefing';

@@ -51,10 +51,10 @@ export class GameEngine {
   // ========================================================================
 
   /**
-   * Start the game: LOBBY -> GAME_INIT.
+   * Start the game: LOBBY -> RULES_BRIEFING.
    *
-   * Validates minimum players, deals missions, then immediately
-   * proceeds to the first round.
+   * Validates minimum players, deals missions, then waits until every
+   * seated player confirms the rules and then their own missions.
    */
   startGame(): void {
     // Only drop ghosts when the game can actually start — a premature
@@ -72,11 +72,52 @@ export class GameEngine {
     }
 
     this.logEvent('game_start');
+    this.persistAllPlayers();
+    this.syncToDB();
+    this.broadcast();
+  }
+
+  /**
+   * Player finished reading the current briefing page.
+   * When everyone connected has confirmed, advance to missions or round 1.
+   */
+  onBriefingConfirmed(playerId: string): StateResult {
+    const result = stateMachine.confirmBriefing(this.room, playerId);
+    if (!result.success) {
+      return result;
+    }
+
+    this.logEvent('briefing_confirmed', undefined, undefined, playerId, {
+      phase: this.room.phase,
+    });
+    this.syncPlayerState(playerId);
     this.syncToDB();
     this.broadcast();
 
-    // Immediately proceed to first round
-    this.startRound();
+    if (stateMachine.checkAllBriefingReady(this.room)) {
+      this.advanceBriefing();
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * RULES_BRIEFING -> MISSION_BRIEFING, or MISSION_BRIEFING -> first round.
+   */
+  private advanceBriefing(): void {
+    const phase = this.room.phase;
+    if (phase === 'RULES_BRIEFING' || phase === 'GAME_INIT') {
+      stateMachine.beginMissionBriefing(this.room);
+      this.logEvent('mission_briefing_start');
+      this.persistAllPlayers();
+      this.syncToDB();
+      this.broadcast();
+      return;
+    }
+
+    if (phase === 'MISSION_BRIEFING') {
+      this.startRound();
+    }
   }
 
   /**
@@ -247,7 +288,8 @@ export class GameEngine {
     if (gem?.pickedBy && gem?.pickOrder !== undefined) {
       this.syncGemPick(gemId, gem.pickedBy, gem.pickOrder);
     }
-    this.syncPlayerState(playerId);
+    stateMachine.refreshMissionProgress(this.room);
+    this.persistAllPlayers();
     this.syncToDB();
     this.broadcast();
 
@@ -311,6 +353,7 @@ export class GameEngine {
     this.logEvent('round_end', this.room.currentRound, undefined, undefined, {
       gemResults: this.room.roundHistory[this.room.roundHistory.length - 1]?.gemResults,
     });
+    this.persistAllPlayers();
     this.syncToDB();
     this.broadcast();
 
@@ -627,6 +670,12 @@ export class GameEngine {
     const phase = this.room.phase;
 
     switch (phase) {
+      case 'GAME_INIT':
+      case 'RULES_BRIEFING':
+      case 'MISSION_BRIEFING':
+        this.advanceBriefing();
+        break;
+
       case 'ROUND_START':
       case 'GEM_REVEAL':
         this.timerManager.clear('gem_reveal');
@@ -886,6 +935,15 @@ export class GameEngine {
       gemRepo.updateGemPick(gemId, pickedBy, pickOrder);
     } catch (err) {
       logger.error('Failed to sync gem pick to DB', { error: err, gemId });
+    }
+  }
+
+  /**
+   * Persist every seated player's live fields (ready, gems, missions).
+   */
+  private persistAllPlayers(): void {
+    for (const player of this.room.players.values()) {
+      this.syncPlayerState(player.id);
     }
   }
 

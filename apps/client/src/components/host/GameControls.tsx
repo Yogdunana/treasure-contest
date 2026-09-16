@@ -19,6 +19,7 @@ import { useGameStore } from '../../store/game-store';
 import { useHostControls } from '../../hooks/useHostControls';
 import {
   MIN_PLAYERS,
+  isBriefingPhase,
   type GamePhase,
 } from '@treasure-contest/shared';
 
@@ -46,6 +47,8 @@ const BTN_STYLES = {
 /** Phases in which the game is actively running (not lobby or game over). */
 const ACTIVE_PHASES: GamePhase[] = [
   'GAME_INIT',
+  'RULES_BRIEFING',
+  'MISSION_BRIEFING',
   'ROUND_START',
   'GEM_REVEAL',
   'NUMBER_SELECTION',
@@ -207,6 +210,14 @@ function GameControlsComponent({ className }: GameControlsProps) {
         {phase === 'LOBBY' && playerCount >= MIN_PLAYERS && (
           <span className="text-emerald-400">可以开始游戏了</span>
         )}
+        {isBriefingPhase(phase) && (
+          <span className="text-violet-300">
+            {phase === 'MISSION_BRIEFING' ? '等待玩家确认任务' : '等待玩家确认规则'}
+            {' '}
+            ({playerSeats.filter((p) => p.isReady).length}/{playerSeats.length})
+            ，可不点「推进阶段」跳过
+          </span>
+        )}
         {phase === 'GEM_SELECTION' && currentPickerId && (
           <span className="text-orange-400">正在宝石选择中</span>
         )}
@@ -217,6 +228,7 @@ function GameControlsComponent({ className }: GameControlsProps) {
           <span className="text-slate-400">游戏已结束</span>
         )}
         {phase !== 'LOBBY' &&
+          !isBriefingPhase(phase) &&
           phase !== 'GEM_SELECTION' &&
           phase !== 'PAUSED' &&
           phase !== 'GAME_OVER' && (

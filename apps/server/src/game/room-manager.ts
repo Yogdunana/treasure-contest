@@ -200,7 +200,7 @@ export class RoomManager {
         record.targetPlayers,
       );
 
-      room.phase = record.phase;
+      room.phase = record.phase === 'GAME_INIT' ? 'RULES_BRIEFING' : record.phase;
       room.currentRound = record.currentRound;
       // Historical rows were inserted with game_session=0 while in-memory
       // rooms start at 1. Tokens issued before restart used 1 — keep that.
@@ -305,6 +305,9 @@ export class RoomManager {
       // If the room was in an active game phase, set it to PAUSED
       // so the host can resume manually after reconnection
       const activeGamePhases: GamePhase[] = [
+        'GAME_INIT',
+        'RULES_BRIEFING',
+        'MISSION_BRIEFING',
         'ROUND_START',
         'GEM_REVEAL',
         'NUMBER_SELECTION',

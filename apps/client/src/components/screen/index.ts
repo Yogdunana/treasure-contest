@@ -8,6 +8,10 @@ export { default as ScreenDisplayDefault } from './ScreenDisplay';
 
 export { LobbyScreen } from './LobbyScreen';
 
+export { RulesScreen } from './RulesScreen';
+
+export { PlayerCollections } from './PlayerCollections';
+
 export { GemReveal } from './GemReveal';
 
 export { NumberSelection } from './NumberSelection';

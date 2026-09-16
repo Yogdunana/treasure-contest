@@ -44,9 +44,12 @@ export function setupActionHandlers(
     handleSubmitNumber(socket, payload, roomManager, broadcaster);
   });
 
-  // -- action:select_gem ---------------------------------------------------
   socket.on('action:select_gem', (payload: SelectGemPayload) => {
     handleSelectGem(socket, payload, roomManager, broadcaster);
+  });
+
+  socket.on('action:confirm_briefing', () => {
+    handleConfirmBriefing(socket, roomManager, broadcaster);
   });
 }
 
@@ -231,6 +234,54 @@ function handleSelectGem(
     playerId,
     gemId,
   });
+}
+
+// ============================================================================
+// action:confirm_briefing
+// ============================================================================
+
+function handleConfirmBriefing(
+  socket: AppSocket,
+  roomManager: RoomManager,
+  broadcaster: Broadcaster,
+): void {
+  const roomCode = socket.data.roomCode;
+  const playerId = socket.data.playerId;
+
+  if (!roomCode || !playerId) {
+    broadcaster.sendError(
+      socket,
+      'PLAYER_NOT_FOUND',
+      'You are not in a room. Please join a room first.',
+    );
+    return;
+  }
+
+  const room = roomManager.getRoom(roomCode);
+  if (!room) {
+    broadcaster.sendError(socket, 'ROOM_NOT_FOUND', `Room ${roomCode} not found`);
+    return;
+  }
+
+  const engine = roomManager.getEngine(roomCode);
+  if (!engine) {
+    broadcaster.sendError(socket, 'INTERNAL_ERROR', 'Game engine not available');
+    return;
+  }
+
+  const result = engine.onBriefingConfirmed(playerId);
+  if (!result.success) {
+    const errorCode = mapEngineError(result.error);
+    broadcaster.sendError(socket, errorCode, result.error ?? 'Invalid action');
+    logger.warn('Briefing confirm failed', {
+      roomCode,
+      playerId,
+      error: result.error,
+    });
+    return;
+  }
+
+  logger.info('Briefing confirmed', { roomCode, playerId, phase: room.phase });
 }
 
 // ============================================================================

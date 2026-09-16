@@ -125,3 +125,47 @@ export const COLLISION_VOID_THRESHOLD = 4;
 
 /** 2-3 players submitting the same number is resolved by seat order. */
 export const COLLISION_RESOLVE_THRESHOLD = 3;
+
+// ============================================================================
+// Opening rules briefing (shown on phones and the big screen)
+// ============================================================================
+
+export interface GameRuleSection {
+  title: string;
+  items: string[];
+}
+
+/** Shared copy for the pre-game rules screen. Missions stay off the projector. */
+export const GAME_RULE_SECTIONS: GameRuleSection[] = [
+  {
+    title: '对局概览',
+    items: [
+      '全场共 6 轮，4–8 人同桌。',
+      '开局每人会拿到 3 个秘密任务（简单 / 中等 / 困难各 1 个），只有自己能看见。',
+      '每轮出现 4 颗宝石，颜色互不相同，点数 1–10。',
+    ],
+  },
+  {
+    title: '选数字',
+    items: [
+      '每人手里有 1–7，每轮只能打出一张，用过的不能再用。',
+      '限时内没出牌，会自动打出你手里最小的数字。',
+    ],
+  },
+  {
+    title: '选宝石顺序',
+    items: [
+      '数字越大的人越先选宝石。',
+      '2–3 人出同一数字：按座位号从小到大依次选。',
+      '4 人及以上出同一数字：该数字作废，这些人本轮不能选宝石。',
+    ],
+  },
+  {
+    title: '计分',
+    items: [
+      '宝石点数直接计入基础分。',
+      '同色越多加成越高：2 颗 +3，3 颗 +8，4 颗 +15，5 颗 +25，6 颗 +40。多色可叠加。',
+      '任务完成后额外加分：简单 +10、中等 +20、困难 +35。',
+    ],
+  },
+];

@@ -208,6 +208,7 @@ export class Room {
         seatNumber: p.seatNumber,
         isConnected: p.isConnected,
         isReady: p.isReady,
+        gems: p.gems,
       }));
 
     const currentPickerId = this.getCurrentPickerId();
@@ -295,6 +296,11 @@ export class Room {
     void colorCounts;
 
     const authToken = this.playerAuthTokens.get(playerId);
+    const viewPhase = this.getViewPhase();
+    // Keep secret missions off phones until everyone has finished the
+    // shared rules page. Host still sees them via toHostState().
+    const missionsVisible =
+      viewPhase !== 'RULES_BRIEFING' && viewPhase !== 'GAME_INIT';
 
     return {
       playerId: player.id,
@@ -302,7 +308,7 @@ export class Room {
       usedNumbers: player.usedNumbers,
       roundSubmission: player.roundSubmission,
       gems: player.gems,
-      missions: player.missions,
+      missions: missionsVisible ? player.missions : [],
       baseScore,
       colorBonuses,
       finalScore,

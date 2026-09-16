@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Gem, Player, PlayerMission } from '@treasure-contest/shared';
 import { MISSION_REWARDS } from '@treasure-contest/shared';
 import { Room } from './room.js';
-import { calculateFinalScores, revealNumbers, submitNumber } from './state-machine.js';
+import { calculateFinalScores, revealNumbers, submitNumber, startGame, confirmBriefing, beginMissionBriefing, checkAllBriefingReady, refreshMissionProgress } from './state-machine.js';
 import { resolveTies } from '@treasure-contest/shared';
 
 function gem(id: string, color: Gem['color'], value: number): Gem {
@@ -200,5 +200,92 @@ describe('paused public state', () => {
     expect(snap.phase).toBe('PAUSED');
     expect(snap.pausedPhase).toBe('NUMBER_REVEAL');
     expect(snap.revealedNumbers).toEqual([{ playerId: 'p1', number: 7 }]);
+  });
+});
+
+describe('opening briefing', () => {
+  function seatedRoom(): Room {
+    const room = new Room('BRF', 'Host', 'token', 4);
+    for (const [id, name, seat] of [
+      ['p1', 'Ava', 1],
+      ['p2', 'Ben', 2],
+      ['p3', 'Cara', 3],
+      ['p4', 'Dan', 4],
+    ] as const) {
+      room.players.set(id, makePlayer(id, name, seat, []));
+    }
+    return room;
+  }
+
+  it('starts in RULES_BRIEFING and withholds missions from phones', () => {
+    const room = seatedRoom();
+    const result = startGame(room);
+    expect(result.success).toBe(true);
+    expect(room.phase).toBe('RULES_BRIEFING');
+    expect(room.currentRound).toBe(0);
+    expect(room.players.get('p1')?.missions).toHaveLength(3);
+    expect(room.toPlayerPrivateState('p1')?.missions).toHaveLength(0);
+    expect(room.toHostState().missionOverview[0]?.missions).toHaveLength(3);
+  });
+
+  it('advances to mission briefing only after every connected player confirms', () => {
+    const room = seatedRoom();
+    startGame(room);
+
+    expect(confirmBriefing(room, 'p1').success).toBe(true);
+    expect(checkAllBriefingReady(room)).toBe(false);
+
+    confirmBriefing(room, 'p2');
+    confirmBriefing(room, 'p3');
+    expect(checkAllBriefingReady(room)).toBe(false);
+
+    confirmBriefing(room, 'p4');
+    expect(checkAllBriefingReady(room)).toBe(true);
+
+    beginMissionBriefing(room);
+    expect(room.phase).toBe('MISSION_BRIEFING');
+    expect(room.players.get('p1')?.isReady).toBe(false);
+    expect(room.toPlayerPrivateState('p1')?.missions).toHaveLength(3);
+  });
+
+  it('does not wait on a disconnected player who never confirmed', () => {
+    const room = seatedRoom();
+    startGame(room);
+    const dan = room.players.get('p4')!;
+    dan.isConnected = false;
+
+    confirmBriefing(room, 'p1');
+    confirmBriefing(room, 'p2');
+    confirmBriefing(room, 'p3');
+    expect(checkAllBriefingReady(room)).toBe(true);
+  });
+});
+
+describe('public gem collections and live missions', () => {
+  it('exposes collected gems on public seats', () => {
+    const room = new Room('GEMS', 'Host', 'token', 4);
+    const p = makePlayer('p1', 'Ava', 1, [gem('g1', 'blue', 7), gem('g2', 'red', 3)]);
+    room.players.set('p1', p);
+
+    const seat = room.toPublicState().playerSeats[0];
+    expect(seat?.gems).toEqual([
+      { id: 'g1', color: 'blue', value: 7 },
+      { id: 'g2', color: 'red', value: 3 },
+    ]);
+  });
+
+  it('marks a color mission complete as soon as the gems are collected', () => {
+    const room = new Room('LIVE', 'Host', 'token', 4);
+    const p = makePlayer('p1', 'Ava', 1, [
+      gem('g1', 'blue', 4),
+      gem('g2', 'blue', 6),
+    ]);
+    p.missions = [
+      { missionId: 'S01', difficulty: 'easy', reward: 10, completed: false },
+    ];
+    room.players.set('p1', p);
+
+    refreshMissionProgress(room);
+    expect(p.missions[0]?.completed).toBe(true);
   });
 });
